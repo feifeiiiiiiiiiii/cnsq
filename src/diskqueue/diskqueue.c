@@ -2,6 +2,7 @@
 
 #define META_FMT_STR "%s/%s.diskqueue.meta.dat"
 #define DATA_FMT_STR "%s/%s.diskqueue.%06d.dat"
+#define TEMP_FMT_STR "%s.%d.tmp"
 
 static int retrieveMetaData(diskqueue *d);
 static char *metaDataFileName(diskqueue *d);
@@ -11,6 +12,8 @@ static void workLoop(void *arg);
 static void moveForward(diskqueue *d);
 static void checkTailCorruption(diskqueue *d);
 static void skipToNextRWFile(diskqueue *d);
+static void dqsync(diskqueue *d);
+static int persistMetaData(diskqueue *d);
 
 u32 ntoh32(u32 value){  
     return (value & 0x000000FFU) << 24 | (value & 0x0000FF00U) << 8 |   
@@ -21,19 +24,19 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
 {
     int res;
 
-    u32 nameLen = strlen(name);
-    u32 pathLen = strlen(dataPath);
+    u32 nameLen = strlen(name)+1;
+    u32 pathLen = strlen(dataPath)+1;
     diskqueue *d = (diskqueue *)malloc(sizeof(diskqueue));
 
     if(d == NULL) 
         return NULL;
     
-    d->name = (char *)malloc((nameLen + 1) * sizeof(char));
+    d->name = (char *)malloc((nameLen));
     if(d->name == NULL)
         goto failed;
     memcpy(d->name, name, nameLen);
 
-    d->dataPath = (char *)malloc((pathLen + 1) * sizeof(char));
+    d->dataPath = (char *)malloc((pathLen));
     if(d->dataPath == NULL)
         goto failed;
     memcpy(d->dataPath, dataPath, pathLen);
@@ -58,7 +61,7 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     ngx_queue_init(&d->readQueue);
     
     res = retrieveMetaData(d);
-    
+
     ioLoop(d);
     
     return d;
@@ -83,6 +86,7 @@ int retrieveMetaData(diskqueue *d)
 
     f = fopen(fileName, "r");
     if(f == NULL) {
+        printf("%s, %s\n", fileName, strerror(errno));
         goto failed;
     }
     fscanf(f, "%lld\n%lld,%lld\n%lld,%lld\n", 
@@ -95,10 +99,11 @@ int retrieveMetaData(diskqueue *d)
     d->nextReadPos = d->readPos;
     d->nextReadFileNum = d->readFileNum;
     fclose(f);
-
+    return 1;
 failed:
     if(fileName != NULL)
         free((void *)fileName);
+    exit(-1);
     return 0;
 }
 
@@ -106,7 +111,8 @@ static
 char *metaDataFileName(diskqueue *d)
 {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 2;
-    char *fileName = malloc(len * sizeof(char));
+    char *fileName = malloc(len+1);
+    printf("%s,%s,%ld\n", d->dataPath, d->name, strlen(d->name));
     sprintf(fileName, META_FMT_STR, d->dataPath, d->name);
     return fileName;
 }
@@ -114,7 +120,7 @@ char *metaDataFileName(diskqueue *d)
 static 
 char *fileName(diskqueue *d, u32 filenum) {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 7;
-    char *fileName = malloc(len * sizeof(char));
+    char *fileName = malloc(len+1);
     sprintf(fileName, DATA_FMT_STR, d->dataPath, d->name, filenum);
     return fileName;
 }
@@ -157,8 +163,13 @@ void workLoop(void *arg)
             if(!ngx_queue_empty(&d->readQueue)) {
                 write(d->readFd[1], "r", 1);
             }
+            break;
         case 'm':
             moveForward(d);
+            break;
+        case 's':
+            dqsync(d);
+            break;
         }
     }
 }
@@ -202,9 +213,9 @@ void *readOne(diskqueue *d) {
 
     qchunk *chunk = (qchunk *)malloc(sizeof(qchunk));
     chunk->dataLen = msgSize;
-    chunk->data = (char *)malloc(sizeof(char)*(msgSize+1));
+    chunk->data = (char *)malloc(msgSize+1);
 
-    rc = fread(chunk->data, 1, msgSize * sizeof(char), d->readFile);
+    rc = fread(chunk->data, 1, msgSize, d->readFile);
     if(rc <= 0) {
         fclose(d->readFile);
         d->readFile = NULL;
@@ -245,8 +256,6 @@ void *ReadChan(diskqueue *d) {
                 ngx_queue_remove(&chunk->queue);
                 write(d->noticeFd[1], "m", 1);
                 return chunk;
-            case 's':
-                printf("sync\n");
         }
     }
 }
@@ -321,4 +330,44 @@ void skipToNextRWFile(diskqueue *d)
     d->nextReadFileNum = d->writeFileNum;
     d->nextReadPos = 0;
     d->depth = 0;
+}
+
+static
+void dqsync(diskqueue *d)
+{
+    if(d->writeFile != NULL) {
+        fflush(d->writeFile);
+        fclose(d->writeFile);
+        d->writeFile = NULL;
+        return;
+    }
+    persistMetaData(d);
+}
+
+static
+int persistMetaData(diskqueue *d)
+{
+    File *f;
+    int err;
+    srand((unsigned)time(NULL));
+
+    const char *fileName = metaDataFileName(d);
+    int tmpLen = strlen(fileName) + 4 + 2 + 3;
+    char tmpFileName[tmpLen+1];
+    sprintf(tmpFileName, TEMP_FMT_STR, fileName, (int)random()%6379);
+
+    f = fopen(tmpFileName, "w+");
+    if(f == NULL) {
+        printf("%s, %s\n", tmpFileName, strerror(errno));
+        return 0;
+    }
+    fprintf(f, "%lld\n%lld,%lld\n%lld,%lld\n",
+            d->depth, 
+            d->readFileNum, d->readPos,
+            d->writeFileNum, d->writePos);
+
+    fflush(f);
+    fclose(f);
+    rename(tmpFileName, fileName);
+    return 1;
 }
