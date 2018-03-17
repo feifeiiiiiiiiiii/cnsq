@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include "queue.h"
 
 typedef uint8_t     u8;
 typedef uint16_t    u16;
@@ -24,7 +23,6 @@ typedef struct {
     u64     depth;
 
     pthread_mutex_t mutex;
-
 
     u64     maxBytesPerFile;
     u32     minMsgSize;
@@ -47,15 +45,11 @@ typedef struct {
     // metadata
     char    *name;
     char    *dataPath;
-
-    ngx_queue_t readQueue;
-    ngx_queue_t writeQueue;
 } diskqueue;
 
 typedef struct {
     u32 dataLen;
     void *data;
-    ngx_queue_t queue;
 } qchunk;
 
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery);

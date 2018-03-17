@@ -15,7 +15,8 @@ static void checkTailCorruption(diskqueue *d);
 static void skipToNextRWFile(diskqueue *d);
 static void dqsync(diskqueue *d);
 static int persistMetaData(diskqueue *d);
-int writeOne(diskqueue *d, char *data, u32 dataLen);
+static int writeOne(diskqueue *d, char *data, u32 dataLen);
+static void handleReadError(diskqueue *d);
 
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery)
 {
@@ -44,13 +45,16 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     d->minMsgSize = minMsgSize;
     d->maxMsgSize = maxMsgSize;
     d->syncEvery = syncEvery;
+    d->depth = 0;
+    d->readPos = 0;
+    d->writePos = 0;
+    d->writeFileNum = 0;
+    d->nextReadFileNum = 0;
+    d->readFileNum = 0;
 
-    ngx_queue_init(&d->readQueue);
-    ngx_queue_init(&d->writeQueue);
-    
     res = retrieveMetaData(d);
 
-    ioLoop(d);
+    //ioLoop(d);
     
     return d;
 
@@ -115,20 +119,20 @@ char *fileName(diskqueue *d, u32 filenum) {
 static 
 void ioLoop(diskqueue *d)
 {
-    pthread_t   thread;
+    pthread_t   thread[2];
     pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
-    pthread_create(&thread, &attr, (void *(*)(void*))workReadLoop, (void *)d);
-    pthread_attr_destroy(&attr);
-    pthread_detach(thread);
 
-    pthread_t   thread2;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
-    pthread_create(&thread2, &attr, (void *(*)(void*))workWriteLoop, (void *)d);
+    pthread_create(&thread[0], &attr, (void *(*)(void*))workReadLoop, (void *)d);
     pthread_attr_destroy(&attr);
-    pthread_detach(thread2);
+    pthread_detach(thread[0]);
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
+    pthread_create(&thread[1], &attr, (void *(*)(void*))workWriteLoop, (void *)d);
+    pthread_attr_destroy(&attr);
+    pthread_detach(thread[1]);
 }
 
 static
@@ -136,25 +140,11 @@ void workWriteLoop(void *arg)
 {
     diskqueue *d = (diskqueue *)arg;
     qchunk *chunk = NULL;
-    ngx_queue_t *q;
 }
 
 static
 void workReadLoop(void *arg)
 {
-    diskqueue *d = (diskqueue *)arg;
-    qchunk *chunk = NULL;
-    ngx_queue_t *q;
-
-    for(;;) {
-        if(((d->readFileNum < d->writeFileNum) || (d->readPos < d->writePos))) {
-            if(d->nextReadPos == d->readPos) {
-                chunk = readOne(d);
-            }
-        } else {
-            chunk = NULL;
-        }
-    }
 }
 
 void *readOne(diskqueue *d) {
@@ -223,9 +213,20 @@ void *readOne(diskqueue *d) {
 }
 
 void *readData(diskqueue *d) {
-    ngx_queue_t *q;
-    qchunk *chunk = NULL;
-    return NULL;
+    qchunk *chunk;
+    if(((d->readFileNum < d->writeFileNum) || (d->readPos < d->writePos))) {
+        if(d->nextReadPos == d->readPos) {
+            chunk = readOne(d);
+            if(chunk == NULL) {
+                handleReadError(d);
+            } else {
+                moveForward(d);
+            }
+        }
+    } else {
+        chunk = NULL;
+    }
+    return chunk;
 }
 
 static
@@ -242,6 +243,7 @@ void moveForward(diskqueue *d) {
         if(ret != 0) {
             printf("remove file failed = %s\n", fn);
         }
+        dqsync(d);
         free((void *)fn);
     }
 
@@ -259,12 +261,12 @@ void checkTailCorruption(diskqueue *d)
 
     if(depth) {
         d->depth = 0;
-        // needSync
+        dqsync(d);
     }
 
     if(d->readFileNum != d->writeFileNum) {
         skipToNextRWFile(d);
-        //needSync
+        dqsync(d);
     }
 }
 
@@ -342,14 +344,12 @@ int
 putData(diskqueue *d, char *data, const u32 dataLen)
 {
     pthread_mutex_lock(&d->mutex); 
-    qchunk *chunk = malloc(sizeof(qchunk));
-    chunk->data = data;
-    chunk->dataLen = dataLen;
-    ngx_queue_insert_tail(&d->writeQueue, &chunk->queue);
-
-    return 0;
+    writeOne(d, data, dataLen);
+    pthread_mutex_unlock(&d->mutex);
+    return 1;
 }
 
+static
 int writeOne(diskqueue *d, char *data, u32 dataLen)
 {
     int err;
@@ -408,4 +408,36 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
         }
     }
     return 1;
+}
+
+static
+void handleReadError(diskqueue *d)
+{
+    if(d->readFileNum == d->writeFileNum) {
+        if(d->writeFile != NULL) {
+            fclose(d->writeFile);
+            d->writeFile = NULL;
+        }
+        d->writeFileNum++;
+        d->writePos = 0;
+    }
+    
+    char *badFn = fileName(d, d->readFileNum);
+    char *badRenameFn = malloc(sizeof(strlen(badFn)) + 5);
+    sprintf(badRenameFn, "%s.bad", badFn);
+
+    int ret = rename(badFn, badRenameFn);
+    if(ret < 0) {
+        printf("rename error\n");
+    }
+
+    d->readFileNum++;
+    d->readPos = 0;
+    d->nextReadFileNum = d->readFileNum;
+    d->nextReadPos = 0;
+
+    dqsync(d);
+
+    free(badFn);
+    free(badRenameFn);
 }
