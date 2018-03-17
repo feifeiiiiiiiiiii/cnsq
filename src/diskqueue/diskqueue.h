@@ -43,15 +43,13 @@ typedef struct {
     char    *reader;
     char    *writeBuf;
 
-    int     readFd[2];
-    int     writeFd[2];    
-    int     noticeFd[2];  
-    
+
     // metadata
     char    *name;
     char    *dataPath;
 
     ngx_queue_t readQueue;
+    ngx_queue_t writeQueue;
 } diskqueue;
 
 typedef struct {
@@ -62,6 +60,7 @@ typedef struct {
 
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery);
 void *readOne(diskqueue *d);
-void *ReadChan(diskqueue *d);
+void *readData(diskqueue *d);
+int putData(diskqueue *d, char *msg, const u32 dataLen);
 
 #endif // DISKQUEUE_H_

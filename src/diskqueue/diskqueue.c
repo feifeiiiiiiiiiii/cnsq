@@ -8,17 +8,14 @@ static int retrieveMetaData(diskqueue *d);
 static char *metaDataFileName(diskqueue *d);
 static char *fileName(diskqueue *d, u32 filenum);
 static void ioLoop(diskqueue *d);
-static void workLoop(void *arg);
+static void workReadLoop(void *arg);
+static void workWriteLoop(void *arg);
 static void moveForward(diskqueue *d);
 static void checkTailCorruption(diskqueue *d);
 static void skipToNextRWFile(diskqueue *d);
 static void dqsync(diskqueue *d);
 static int persistMetaData(diskqueue *d);
-
-u32 ntoh32(u32 value){  
-    return (value & 0x000000FFU) << 24 | (value & 0x0000FF00U) << 8 |   
-        (value & 0x00FF0000U) >> 8 | (value & 0xFF000000U) >> 24;   
-}  
+int writeOne(diskqueue *d, char *data, u32 dataLen);
 
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery)
 {
@@ -41,17 +38,7 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
         goto failed;
     memcpy(d->dataPath, dataPath, pathLen);
 
-    pthread_mutex_init(&d->mutex, NULL);
-
-    int ret = pipe(d->readFd);
-    if(ret != 0) {
-        goto failed;
-    }
-
-    ret = pipe(d->noticeFd);
-    if(ret != 0) {
-        goto failed;
-    }
+    pthread_mutex_init(&d->mutex, NULL);    
 
     d->maxBytesPerFile = maxBytesPerFile;
     d->minMsgSize = minMsgSize;
@@ -59,6 +46,7 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     d->syncEvery = syncEvery;
 
     ngx_queue_init(&d->readQueue);
+    ngx_queue_init(&d->writeQueue);
     
     res = retrieveMetaData(d);
 
@@ -103,7 +91,6 @@ int retrieveMetaData(diskqueue *d)
 failed:
     if(fileName != NULL)
         free((void *)fileName);
-    exit(-1);
     return 0;
 }
 
@@ -132,16 +119,32 @@ void ioLoop(diskqueue *d)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
-    pthread_create(&thread, &attr, (void *(*)(void*))workLoop, (void *)d);
+    pthread_create(&thread, &attr, (void *(*)(void*))workReadLoop, (void *)d);
     pthread_attr_destroy(&attr);
     pthread_detach(thread);
+
+    pthread_t   thread2;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
+    pthread_create(&thread2, &attr, (void *(*)(void*))workWriteLoop, (void *)d);
+    pthread_attr_destroy(&attr);
+    pthread_detach(thread2);
 }
 
 static
-void workLoop(void *arg)
+void workWriteLoop(void *arg)
 {
     diskqueue *d = (diskqueue *)arg;
     qchunk *chunk = NULL;
+    ngx_queue_t *q;
+}
+
+static
+void workReadLoop(void *arg)
+{
+    diskqueue *d = (diskqueue *)arg;
+    qchunk *chunk = NULL;
+    ngx_queue_t *q;
 
     for(;;) {
         if(((d->readFileNum < d->writeFileNum) || (d->readPos < d->writePos))) {
@@ -150,26 +153,6 @@ void workLoop(void *arg)
             }
         } else {
             chunk = NULL;
-        }
-
-        char cmd;
-        read(d->noticeFd[0], &cmd, 1);
-
-        switch(cmd) {
-        case 'n':
-            if(chunk != NULL) {
-                ngx_queue_insert_tail(&d->readQueue, &chunk->queue);
-            } 
-            if(!ngx_queue_empty(&d->readQueue)) {
-                write(d->readFd[1], "r", 1);
-            }
-            break;
-        case 'm':
-            moveForward(d);
-            break;
-        case 's':
-            dqsync(d);
-            break;
         }
     }
 }
@@ -203,7 +186,7 @@ void *readOne(diskqueue *d) {
         d->readFile = NULL;
         return 0;
     }
-    msgSize = ntoh32(msgSize);
+    msgSize = ntohl(msgSize);
 
     if(msgSize < d->minMsgSize || msgSize > d->maxMsgSize) {
         fclose(d->readFile);
@@ -239,25 +222,10 @@ void *readOne(diskqueue *d) {
     return chunk;
 }
 
-void *ReadChan(diskqueue *d) {
+void *readData(diskqueue *d) {
     ngx_queue_t *q;
     qchunk *chunk = NULL;
-
-    write(d->noticeFd[1], "n", 1); // next
-    
-    while(1) {
-        char ch;
-        int n = read(d->readFd[0], &ch, 1);
-        if(n < 0) continue;
-        switch(ch) {
-            case 'r':
-                q = ngx_queue_head(&d->readQueue);
-                chunk = (qchunk *)ngx_queue_data(q, qchunk, queue);
-                ngx_queue_remove(&chunk->queue);
-                write(d->noticeFd[1], "m", 1);
-                return chunk;
-        }
-    }
+    return NULL;
 }
 
 static
@@ -268,8 +236,6 @@ void moveForward(diskqueue *d) {
     d->depth -= 1;
 
     if(oldReadFileNum != d->nextReadFileNum) {
-        // needSync
-        write(d->noticeFd[1], "s", 1);
         
         const char *fn = fileName(d, oldReadFileNum);
         int ret = remove(fn);
@@ -339,7 +305,6 @@ void dqsync(diskqueue *d)
         fflush(d->writeFile);
         fclose(d->writeFile);
         d->writeFile = NULL;
-        return;
     }
     persistMetaData(d);
 }
@@ -356,7 +321,8 @@ int persistMetaData(diskqueue *d)
     char tmpFileName[tmpLen+1];
     sprintf(tmpFileName, TEMP_FMT_STR, fileName, (int)random()%6379);
 
-    f = fopen(tmpFileName, "w+");
+    printf("%s\n", tmpFileName);
+    f = fopen(tmpFileName, "w");
     if(f == NULL) {
         printf("%s, %s\n", tmpFileName, strerror(errno));
         return 0;
@@ -369,5 +335,77 @@ int persistMetaData(diskqueue *d)
     fflush(f);
     fclose(f);
     rename(tmpFileName, fileName);
+    return 1;
+}
+
+int
+putData(diskqueue *d, char *data, const u32 dataLen)
+{
+    pthread_mutex_lock(&d->mutex); 
+    qchunk *chunk = malloc(sizeof(qchunk));
+    chunk->data = data;
+    chunk->dataLen = dataLen;
+    ngx_queue_insert_tail(&d->writeQueue, &chunk->queue);
+
+    return 0;
+}
+
+int writeOne(diskqueue *d, char *data, u32 dataLen)
+{
+    int err;
+
+    if(d->writeFile == NULL) {
+        char *curFileName = fileName(d, d->writeFileNum);
+        d->writeFile = fopen(curFileName, "a");
+        if(d->writeFile == NULL) {
+            free(curFileName);
+            printf("open file error");
+            return 0;
+        }
+
+        if(d->writePos > 0) {
+            err = fseek(d->writeFile, d->writePos, 0);
+            if(err != 0) {
+                free(curFileName);
+                fclose(d->writeFile);
+                d->writeFile = NULL;
+                return 0;
+            }
+        }
+    }
+
+    if(dataLen < d->minMsgSize || dataLen > d->maxMsgSize) {
+        return 0;
+    }
+    
+    u32 len32 = htonl(dataLen);
+    
+    // 需要合并一次写入
+    err = fwrite(&len32, 4, 1, d->writeFile);
+    if(err <= 0) { 
+       return 0;
+    }
+    err = fwrite(data, dataLen, 1, d->writeFile);
+    if(err <= 0) {
+        return 0;
+    }
+    // need flush
+    fflush(d->writeFile);
+
+    d->writePos += (4+dataLen);
+    d->depth += 1;
+
+    printf("pos=%lld,depth=%lld\n", d->writePos, d->depth);
+
+    if(d->writePos > d->maxBytesPerFile) {
+        d->writeFileNum++;
+        d->writePos = 0;
+        dqsync(d);
+
+        if(d->writeFile != NULL) {
+            fclose(d->writeFile);
+            d->writeFile = NULL;
+        }
+    }
     return 1;
 }
