@@ -7,6 +7,7 @@
 #define AE_NONE 0
 #define AE_READABLE 1
 #define AE_WRITABLE 2
+#define AE_BARRIER 4
 
 #define AE_FILE_EVENTS 1
 #define AE_TIME_EVENTS 2
@@ -64,5 +65,6 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags);
 void aeMain(aeEventLoop *eventLoop);
 int aeCreateTimeEvent(aeEventLoop *eventLoop, struct timeval *tv, aeTimeProc *proc, void *clientData, int mask);
 void aeProcessTimeEvents(aeEventLoop *eventLoop);
+void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask);
 
 #endif /* __AE_H_ */
