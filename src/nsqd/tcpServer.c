@@ -4,11 +4,45 @@
 static char neterr[256];
 
 static void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
-static void acceptCommonHandler(aeEventLoop *el, int fd, int flags, char *ip);
+static void acceptCommonHandler(tcpServer *server, int fd, int flags, char *ip);
 static client *createClient(aeEventLoop *el, int fd);
+static void freeClient(client *c);
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 
-static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {}
+static void freeClient(client *c) {
+	sdsfree(c->querybuf);
+	s_free(c);
+}
+
+static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
+	client *c = (client*) privdata;
+	int nread, readlen;
+	size_t qblen;
+	UNUSED(el);
+	UNUSED(mask);
+	readlen = PROTO_IOBUF_LEN;
+
+	qblen = sdslen(c->querybuf);
+	c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
+
+	nread = read(fd, c->querybuf+qblen, readlen);
+    if (nread == -1) {
+        if (errno == EAGAIN) {
+            return;
+        } else {
+            log_error("Reading from client: %s",strerror(errno));
+            freeClient(c);
+            return;
+        }
+    } else if (nread == 0) {
+        log_error("Client closed connection");
+        freeClient(c);
+        return;
+    }
+	sdsIncrLen(c->querybuf, nread);
+	log_debug("read data %d %s", nread, c->querybuf);
+	// process
+}
 
 static client *createClient(aeEventLoop *el, int fd) {
     client *c = s_malloc(sizeof(client));
@@ -22,32 +56,39 @@ static client *createClient(aeEventLoop *el, int fd) {
             s_free(c);
             return NULL;
         }
-
 	}
+	c->fd = fd;
+	c->querybuf = sdsempty();
 	return c;
 }
 
-static void acceptCommonHandler(aeEventLoop *el, int fd, int flags, char *ip) {
+static void acceptCommonHandler(tcpServer *server, int fd, int flags, char *ip) {
 	client *c;
-	if((c = createClient(el, fd)) == NULL) {
+	if((c = createClient(server->el, fd)) == NULL) {
+		log_error("Error registering fd event for the new client: %s (fd=%d)", strerror(errno),fd);
+		close(fd); /* redis May be already closed, just ignore errors */
 		return;
 	}
+	server->stat_numconnections++;
+	c->flags |= flags;
 }
 
 static void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-	log_trace("acceptTcpHandler");
+	tcpServer *tcpListener = (tcpServer *)privdata;
 
 	int cfd, cport, max = 100;
-	char cip[100];
+	char cip[46];
 
-	while (max--)
-	{
+	while (max--) {
 		cfd = anetTcpAccept(neterr, fd, cip, sizeof(cip), &cport);
-		if (cfd == -1)
-		{
+		if (cfd == -1) {
+			if(errno != EWOULDBLOCK) {
+				log_debug("Accepting client connection found EWOULDBLOCK");
+			}
 			return;
 		}
-		log_trace("accept success %s %d", cip, cport);
+		log_trace("Accept %s %d", cip, cport);
+		acceptCommonHandler(tcpListener, cfd, 0, cip);
 	}
 }
 
@@ -66,15 +107,15 @@ tcpServer *buildTcpServer(char *ipaddr, int port, int backlog, void *context) {
 
 	fd = anetTcpServer(neterr, port, ipaddr, backlog);
 	if (fd == -1) {
-		log_trace("anetTcpServer error %s", neterr);
+		log_error("anetTcpServer error %s", neterr);
         goto failed;
 	}
     anetNonBlock(NULL, fd);
 
     tcpListener->fd = fd;
 
-	if (aeCreateFileEvent(tcpListener->el, fd, AE_READABLE, acceptTcpHandler, NULL) == -1) {
-		log_trace("aeCreateFileEvent failed");
+	if (aeCreateFileEvent(tcpListener->el, fd, AE_READABLE, acceptTcpHandler, tcpListener) == -1) {
+		log_error("aeCreateFileEvent failed");
 		goto failed;
 	}
     return tcpListener;   
@@ -84,6 +125,6 @@ failed:
 }
 
 void tcpServerRun(tcpServer *tcpLister) {
-	log_trace("nsqd server listening in %s:%d\n", tcpLister->ipaddr, tcpLister->port);
+	log_debug("nsqd server listening in %s:%d\n", tcpLister->ipaddr, tcpLister->port);
     aeMain(tcpLister->el);
 }

@@ -2,6 +2,7 @@
 #define TCPSERVER_H
 
 #include <unistd.h>
+#include <errno.h>
 
 #include "../net/ae.h"
 #include "../net/anet.h"
@@ -10,10 +11,13 @@
 
 #include <string.h>
 
+#define UNUSED(V) ((void) V)
 #define PROTO_REPLY_CHUNK_BYTES (16*1024) /* 16k output buffer */
+#define PROTO_IOBUF_LEN         (1024*16)  /* Generic I/O buffer size */
 
 typedef struct client {
     int fd;
+    int flags;
     sds querybuf;
 } client;
 
@@ -24,6 +28,8 @@ typedef struct tcpServer {
     int tcp_backlog;    // TCP listen() backlog
     char ipaddr[18];       // address
     int  fd;           // tcp socket file descriptor
+
+    int stat_numconnections;
 
     /* Response buffer */
     int bufpos;
