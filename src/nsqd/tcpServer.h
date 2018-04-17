@@ -18,7 +18,9 @@
 typedef struct client {
     int fd;
     int flags;
+    int reqtype;
     sds querybuf;
+    void *ctx;
 } client;
 
 typedef struct tcpServer {

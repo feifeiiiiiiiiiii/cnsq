@@ -8,10 +8,48 @@ static void acceptCommonHandler(tcpServer *server, int fd, int flags, char *ip);
 static client *createClient(aeEventLoop *el, int fd);
 static void freeClient(client *c);
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
+static void processInputBuffer(client *c);
 
 static void freeClient(client *c) {
+	log_debug("freeClient");
+	if(c->fd != -1) {
+		tcpServer *listener = c->ctx;
+        /* Unregister async I/O handlers and close the socket. */
+        aeDeleteFileEvent(listener->el, c->fd, AE_READABLE);
+        aeDeleteFileEvent(listener->el, c->fd, AE_WRITABLE);
+        close(c->fd);
+        c->fd = -1;
+    }
 	sdsfree(c->querybuf);
 	s_free(c);
+}
+
+static void processInputBuffer(client *c) {
+	while(sdslen(c->querybuf)) {
+		if(!c->reqtype) {
+			if(sdslen(c->querybuf) < 4) {
+				break;
+			}
+
+			/* magic str */
+			char protoMagic[5];
+			memcpy(protoMagic, c->querybuf, 4);
+			protoMagic[4] = '\0';
+
+			log_debug("Get magic string (%s) %d", protoMagic, strlen(protoMagic));
+
+			if(memcmp(protoMagic, "  V2", 4) != 0) {
+				log_error("client(%d) bad protocol magic '%s'", c->fd, protoMagic);
+				close(c->fd);
+				freeClient(c);
+				break;
+			}
+			log_debug("current len = %d", sdslen(c->querybuf));
+			sdsrange(c->querybuf, 4, -1);
+			c->reqtype = 1;
+		}
+		break;
+	}
 }
 
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
@@ -26,13 +64,14 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
 	c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
 
 	nread = read(fd, c->querybuf+qblen, readlen);
+
     if (nread == -1) {
         if (errno == EAGAIN) {
             return;
         } else {
             log_error("Reading from client: %s",strerror(errno));
             freeClient(c);
-            return;
+			return;
         }
     } else if (nread == 0) {
         log_error("Client closed connection");
@@ -42,14 +81,15 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
 	sdsIncrLen(c->querybuf, nread);
 	log_debug("read data %d %s", nread, c->querybuf);
 	// process
+	processInputBuffer(c);
 }
 
 static client *createClient(aeEventLoop *el, int fd) {
     client *c = s_malloc(sizeof(client));
 	if (fd != -1) {
 		anetNonBlock(NULL,fd);
-		anetEnableTcpNoDelay(NULL,fd);
-		if (aeCreateFileEvent(el,fd, AE_READABLE,
+		anetEnableTcpNoDelay(NULL, fd);
+		if (aeCreateFileEvent(el, fd, AE_READABLE,
             readQueryFromClient, c) == AE_ERR)
         {
             close(fd);
@@ -69,6 +109,7 @@ static void acceptCommonHandler(tcpServer *server, int fd, int flags, char *ip) 
 		close(fd); /* redis May be already closed, just ignore errors */
 		return;
 	}
+	c->ctx = server;
 	server->stat_numconnections++;
 	c->flags |= flags;
 }
