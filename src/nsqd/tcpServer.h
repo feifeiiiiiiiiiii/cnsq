@@ -1,9 +1,21 @@
 #ifndef TCPSERVER_H
 #define TCPSERVER_H
 
+#include <unistd.h>
+
 #include "../net/ae.h"
 #include "../net/anet.h"
+#include "../util/sds.h"
+#include "../util/log.h"
+
 #include <string.h>
+
+#define PROTO_REPLY_CHUNK_BYTES (16*1024) /* 16k output buffer */
+
+typedef struct client {
+    int fd;
+    sds querybuf;
+} client;
 
 typedef struct tcpServer {
     aeEventLoop *el;    // eventLoop
@@ -12,6 +24,10 @@ typedef struct tcpServer {
     int tcp_backlog;    // TCP listen() backlog
     char ipaddr[18];       // address
     int  fd;           // tcp socket file descriptor
+
+    /* Response buffer */
+    int bufpos;
+    char buf[PROTO_REPLY_CHUNK_BYTES];
 
     void *ctx;          // context this represent NSQD Instance
 } tcpServer;

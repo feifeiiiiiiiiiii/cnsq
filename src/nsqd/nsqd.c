@@ -1,13 +1,13 @@
 #include "nsqd.h"
-#include "../util/log.h"
+#include "../util/sdsalloc.h"
 
 NSQD *build() {
-    NSQD *n = malloc(sizeof(NSQD));
+    NSQD *n = s_malloc(sizeof(NSQD));
     if(n == NULL) return NULL;
 
     n->tcpListener = buildTcpServer("127.0.0.1", 6379, 128, n); 
     if(n->tcpListener == NULL) {
-        free(n);
+        s_free(n);
         return NULL;
     }
     return n;

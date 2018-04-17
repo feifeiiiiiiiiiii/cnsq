@@ -1,9 +1,38 @@
 #include "tcpServer.h"
-#include "../util/log.h"
+#include "../util/sdsalloc.h"
  
 static char neterr[256];
 
 static void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+static void acceptCommonHandler(aeEventLoop *el, int fd, int flags, char *ip);
+static client *createClient(aeEventLoop *el, int fd);
+static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
+
+static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {}
+
+static client *createClient(aeEventLoop *el, int fd) {
+    client *c = s_malloc(sizeof(client));
+	if (fd != -1) {
+		anetNonBlock(NULL,fd);
+		anetEnableTcpNoDelay(NULL,fd);
+		if (aeCreateFileEvent(el,fd, AE_READABLE,
+            readQueryFromClient, c) == AE_ERR)
+        {
+            close(fd);
+            s_free(c);
+            return NULL;
+        }
+
+	}
+	return c;
+}
+
+static void acceptCommonHandler(aeEventLoop *el, int fd, int flags, char *ip) {
+	client *c;
+	if((c = createClient(el, fd)) == NULL) {
+		return;
+	}
+}
 
 static void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
 	log_trace("acceptTcpHandler");
@@ -23,7 +52,7 @@ static void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) 
 }
 
 tcpServer *buildTcpServer(char *ipaddr, int port, int backlog, void *context) {
-    tcpServer *tcpListener = malloc(sizeof(tcpServer));
+    tcpServer *tcpListener = s_malloc(sizeof(tcpServer));
     if(tcpListener == NULL) {
         return NULL;
     }
@@ -48,13 +77,13 @@ tcpServer *buildTcpServer(char *ipaddr, int port, int backlog, void *context) {
 		log_trace("aeCreateFileEvent failed");
 		goto failed;
 	}
-    log_trace("build tcp server success");
     return tcpListener;   
 failed:
-    free(tcpListener);
+    s_free(tcpListener);
     return NULL;
 }
 
 void tcpServerRun(tcpServer *tcpLister) {
+	log_trace("nsqd server listening in %s:%d\n", tcpLister->ipaddr, tcpLister->port);
     aeMain(tcpLister->el);
 }
