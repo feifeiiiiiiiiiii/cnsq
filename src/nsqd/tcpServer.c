@@ -147,6 +147,7 @@ static void processInputBuffer(client *c) {
 		if(c->execProc) {
 			if(c->execProc(c, tokens, count) == C_OK) {
 				sdsrange(c->querybuf, rangeLen+1, -1);
+				log_debug("sdsrange %s, %d", tokens[0], sdslen(c->querybuf));
 			}
 		}
 		break;
@@ -180,7 +181,7 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
         return;
     }
 	sdsIncrLen(c->querybuf, nread);	
-	//log_debug("recevie data: %d, %s", sdslen(c->querybuf), c->querybuf);
+	log_debug("recevie data: %d, %s", sdslen(c->querybuf), c->querybuf);
 
 	// process
 	processInputBuffer(c);
@@ -308,7 +309,6 @@ int sub(client *c, sds *tokens, int count) {
 	c->state = STATE_SUBSCRIBED;
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
-	log_debug("add reply string = ok");
 	addReplyString(c, "OK", 2);
 	return C_OK;
 failed:
@@ -325,6 +325,7 @@ failed:
 int pub(client *c, sds *tokens, int count) { 
 	if(count < 2) {
 		addReplyError(c, "E_INVALID");
+		c->execProc = NULL;
 		log_debug("E_INVALID: PUB insufficient number of parameters");
 		goto failed;
 	}
@@ -347,12 +348,29 @@ int pub(client *c, sds *tokens, int count) {
 	log_debug("read = %d %d", sdslen(c->querybuf), hasread);
 	bodyLen = (uint32_t *)(c->querybuf + hasread);
 	*bodyLen = ntohl(*bodyLen);
-	log_debug("PUB: body size = %d", *bodyLen);
+	log_debug("bodylen = %d", *bodyLen);
+
+	if(sdslen(c->querybuf) >= PROTO_IOBUF_LEN) {
+		addReplyError(c, "BODY large");
+		c->execProc = NULL;
+		goto failed;
+	}
+
+	if((*bodyLen) <= (sdslen(c->querybuf) - hasread - 4)) {
+		char buf[*bodyLen];
+		memcpy(buf, c->querybuf + hasread + 4, *bodyLen);
+		buf[*bodyLen] = '\0';
+		log_debug("PUB msg: %d, %s", *bodyLen, buf);
+		sdsrange(c->querybuf, *bodyLen + 4, -1);
+		addReplyString(c, "OK", 2);
+	} else {
+		log_debug("PUB: need more data");
+		goto failed;
+	}
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
 failed:
-	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_ERR;
 }
