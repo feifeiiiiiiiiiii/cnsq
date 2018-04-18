@@ -188,7 +188,6 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
         return;
     }
 	sdsIncrLen(c->querybuf, nread);
-	log_debug("read data %d %s", nread, c->querybuf);
 	// process
 	processInputBuffer(c);
 }
@@ -316,6 +315,7 @@ int sub(client *c, sds *tokens, int count) {
 	addReplyString(c, "OK", 2);
 	return C_OK;
 failed:
+	c->proto_type = PROTO_INIT;
 	c->execProc = NULL;
 	addReplyError(c, "E_INVALID");
 	return C_ERR;
