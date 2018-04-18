@@ -1,4 +1,4 @@
-OBJS = tcpServer.o nsqd.o
+OBJS = tcpServer.o nsqd.o topic.o
 LIBS = ../net/libnet.a ../util/libutil.a
 EXECS = nsqd
 
@@ -10,6 +10,9 @@ tcpServer.o: tcpServer.h
 
 nsqd.o: nsqd.h
 	gcc -c nsqd.c
+
+topic.o: topic.h
+	gcc -c topic.c
 
 clean:
 	rm -f ${EXECS} *.a *.o *.exe

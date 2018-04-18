@@ -1,5 +1,4 @@
 #include "nsqd.h"
-#include "../util/dict.h"
 #include "../util/sdsalloc.h"
 
 static uint64_t dictSdsHash(const void *key) {
@@ -30,7 +29,7 @@ NSQD *build() {
     NSQD *n = s_malloc(sizeof(NSQD));
     if(n == NULL) return NULL;
 
-    //n->topicMap = dictCreate(&keyptrDictType, NULL);
+    n->topicMap = dictCreate(&keyptrDictType, NULL);
     
     n->tcpListener = buildTcpServer("127.0.0.1", 6379, 128, n); 
     if(n->tcpListener == NULL) {
@@ -42,6 +41,17 @@ NSQD *build() {
 
 static void nsqdMain(NSQD *n) {
     tcpServerRun(n->tcpListener);
+}
+
+topic *getTopic(NSQD *n, sds topicName) {
+    dictEntry *entry = dictFind(n->topicMap, topicName);
+    if(entry != NULL) {
+        return dictGetVal(entry);
+    }
+    topic *t = newTopic(topicName);
+    dictAdd(n->topicMap, topicName, t);
+    log_debug("Topic(%s): created", topicName);
+    return t;
 }
 
 int main(int argc, char **argv) {

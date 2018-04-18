@@ -8,6 +8,7 @@
 #include "../net/anet.h"
 #include "../util/sds.h"
 #include "../util/log.h"
+#include "common.h"
 #include <string.h>
 
 #define PROTO_INIT 1

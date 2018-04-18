@@ -2,11 +2,10 @@
 #define NSQD_H
 
 #include "tcpServer.h"
-
-typedef struct NSQD {
-    tcpServer *tcpListener;    
-} NSQD;
+#include "common.h"
 
 NSQD *build();
+
+topic *getTopic(NSQD *n, sds topicName);
 
 #endif // NSQD_H

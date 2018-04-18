@@ -145,8 +145,9 @@ static void processInputBuffer(client *c) {
 			}
 		}
 		if(c->execProc) {
-			sdsrange(c->querybuf, rangeLen+1, -1);
-			c->execProc(c, tokens, count);
+			if(c->execProc(c, tokens, count) == C_OK) {
+				sdsrange(c->querybuf, rangeLen+1, -1);
+			}
 		}
 		break;
 	}
@@ -178,7 +179,9 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
         freeClient(c);
         return;
     }
-	sdsIncrLen(c->querybuf, nread);
+	sdsIncrLen(c->querybuf, nread);	
+	//log_debug("recevie data: %d, %s", sdslen(c->querybuf), c->querybuf);
+
 	// process
 	processInputBuffer(c);
 }
@@ -282,6 +285,9 @@ int fin(client *c, sds *tokens, int count) {
 	return C_OK;
 }
 
+/*
+ * SUB <topic_name> <channel_name>\n
+ **/
 int sub(client *c, sds *tokens, int count) {
 	// not allow same client repeat sub
 	if(c->state != STATE_INIT) {
@@ -295,10 +301,10 @@ int sub(client *c, sds *tokens, int count) {
 	}
 
 	tcpServer *serv = (tcpServer *)c->ctx;
-	//NSQD *n = (NSQD *)serv->ctx;
-
-	//topic *t = newTopic(tokens[1]);
+	NSQD *nsqd = (NSQD *)serv->ctx;
 	
+	getTopic(nsqd, tokens[1]);
+
 	c->state = STATE_SUBSCRIBED;
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
@@ -312,22 +318,65 @@ failed:
 	return C_ERR;
 }
 
+/*
+ *	PUB <topic_name>\n
+ *	[ 4-byte size in bytes ][ N-byte binary data ]
+ **/
 int pub(client *c, sds *tokens, int count) { 
+	if(count < 2) {
+		addReplyError(c, "E_INVALID");
+		log_debug("E_INVALID: PUB insufficient number of parameters");
+		goto failed;
+	}
+	
+	sds topicName = tokens[1];
+
+	// read byte
+	size_t hasread = 0;
+	for(int i = 0; i < count; i++) {
+		hasread += sdslen(tokens[i]);
+		log_debug("%s", tokens[i]);
+	}
+	hasread += 2; // "\n"
+
+	if((sdslen(c->querybuf) - hasread) < 4) {
+		log_debug("PUB: need more data");
+		goto failed;
+	}
+	uint32_t *bodyLen;
+	log_debug("read = %d %d", sdslen(c->querybuf), hasread);
+	bodyLen = (uint32_t *)(c->querybuf + hasread);
+	*bodyLen = ntohl(*bodyLen);
+	log_debug("PUB: body size = %d", *bodyLen);
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
+failed:
+	c->execProc = NULL;
+	c->proto_type = PROTO_INIT;
+	return C_ERR;
 }
 
+/*
+ * GET <topic_name> <channel_name>\n
+ **/
 int get(client *c, sds *tokens, int count) {
 	if(c->state != STATE_SUBSCRIBED) {
 		log_error("E_INVALID: cannot GET in current state");
 		goto failed;
 	}
+
+	if(count < 3) {
+		log_error("E_INVALID2: GET insufficient number of parameters");
+		goto failed;
+	}
+
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
 failed:
 	c->execProc = NULL;
 	addReplyError(c, "E_INVALID");
+	c->proto_type = PROTO_INIT;
 	return C_ERR;
 }
