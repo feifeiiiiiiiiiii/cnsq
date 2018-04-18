@@ -35,6 +35,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
     }
+
 	if (sdslen(c->buf) == 0) {
         aeDeleteFileEvent(el,c->fd, AE_WRITABLE);
         /* Close connection after entire reply has been sent. */
@@ -77,6 +78,7 @@ int sub(client *c, sds *tokens, int count);
 int pub(client *c, sds *tokens, int count);
 
 static void freeClient(client *c) {
+	if(c == NULL) return;
 	log_debug("freeClient: Client has sent total %d bytes", c->total_sent_bytes);
 	if(c->fd != -1) {
 		tcpServer *listener = c->ctx;
@@ -98,6 +100,7 @@ static void processInputBuffer(client *c) {
 	int rangeLen = 0;
 	
 	while(sdslen(c->querybuf)) {
+		if (c->flags & REDIS_CLOSE_AFTER_REPLY) return;
 		if(!c->proto_type) {
 			if(sdslen(c->querybuf) < 4) {
 				break;
@@ -156,6 +159,7 @@ static void processInputBuffer(client *c) {
 
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 	client *c = (client*) privdata;
+
 	int nread, readlen;
 	size_t qblen;
 	UNUSED(el);
@@ -351,6 +355,8 @@ int pub(client *c, sds *tokens, int count) {
 	log_debug("bodylen = %d", *bodyLen);
 
 	if(sdslen(c->querybuf) >= PROTO_IOBUF_LEN) {
+		c->flags |= REDIS_CLOSE_AFTER_REPLY;
+		log_debug("msg body large");
 		addReplyError(c, "BODY large");
 		c->execProc = NULL;
 		goto failed;
