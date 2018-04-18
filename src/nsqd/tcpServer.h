@@ -20,6 +20,8 @@
 #define STATE_CLOSE 2
 #define STATE_SUBSCRIBED 3
 
+#define REDIS_CLOSE_AFTER_REPLY (1<<6)
+
 #define C_ERR 1
 #define C_OK 2
 
@@ -39,6 +41,11 @@ typedef struct client {
     sds querybuf;
     protoProc *execProc;
     void *ctx;
+
+    int sentlen;  
+    /* Response buffer */
+    int bufpos;
+    char buf[PROTO_REPLY_CHUNK_BYTES];
 } client;
 
 typedef struct tcpServer {
@@ -50,10 +57,6 @@ typedef struct tcpServer {
     int  fd;           // tcp socket file descriptor
 
     int stat_numconnections;
-
-    /* Response buffer */
-    int bufpos;
-    char buf[PROTO_REPLY_CHUNK_BYTES];
 
     void *ctx;          // context this represent NSQD Instance
 } tcpServer;

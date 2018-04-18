@@ -9,15 +9,72 @@ static client *createClient(aeEventLoop *el, int fd);
 static void freeClient(client *c);
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 static void processInputBuffer(client *c);
+static int prepareClientToWrite(client *c);
+static int _addReplyToBuffer(client *c, const char *s, size_t len);
 
-int _addReplyToBuffer(client *c, const char *s, size_t len) {
+void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
+	client *c = privdata;
+    int nwritten = 0;
+    size_t objmem;
+	UNUSED(el);
+	UNUSED(mask);
+
+	while(c->bufpos > 0) {
+		nwritten = write(fd,c->buf+c->sentlen,c->bufpos-c->sentlen);
+		if (nwritten <= 0) break;
+		c->sentlen += nwritten;
+
+		/* If the buffer was sent, set bufpos to zero to continue with
+			* the remainder of the reply. */
+		if (c->sentlen == c->bufpos) {
+			c->bufpos = 0;
+			c->sentlen = 0;
+		}
+	}
+	if (nwritten == -1) {
+        if (errno == EAGAIN) {
+            nwritten = 0;
+        } else {
+            log_error("Error writing to client: %s", strerror(errno));
+            freeClient(c);
+            return;
+        }
+    }
+	if (c->bufpos == 0) {
+        c->sentlen = 0;
+        aeDeleteFileEvent(el,c->fd, AE_WRITABLE);
+        /* Close connection after entire reply has been sent. */
+		log_debug("c->flags = %d", c->flags);
+        if (c->flags & REDIS_CLOSE_AFTER_REPLY) freeClient(c);
+    }
+}
+
+static int prepareClientToWrite(client *c) {
+	if (c->fd <= 0) return C_ERR; /* Fake client */
+	tcpServer *serv = (tcpServer *)c->ctx;
+
+    if (c->bufpos == 0 &&
+        aeCreateFileEvent(serv->el, c->fd, AE_WRITABLE,
+        sendReplyToClient, c) == AE_ERR) return C_ERR;
+    return C_OK;
+}
+
+static int _addReplyToBuffer(client *c, const char *s, size_t len) {
+	size_t available = sizeof(c->buf)-c->bufpos;
+    if (len > available) return C_ERR;
+
+    memcpy(c->buf+c->bufpos,s,len);
+    c->bufpos+=len;
     return C_OK;
 }
 
 void addReplyString(client *c, const char *s, size_t len) {
+	if (prepareClientToWrite(c) != C_OK) return;
+    _addReplyToBuffer(c,s,len);
 }
 
 void addReplyErrorLength(client *c, const char *s, size_t len) {
+	addReplyString(c,s,len);
 }
 
 void addReplyError(client *c, const char *err) {
@@ -62,13 +119,15 @@ static void processInputBuffer(client *c) {
 			log_debug("Get magic string (%s) %d", protoMagic, strlen(protoMagic));
 
 			if(memcmp(protoMagic, "  V2", 4) != 0) {
+				c->flags |= REDIS_CLOSE_AFTER_REPLY;
+				addReplyError(c, "bad protocol magic");
 				log_error("client(%d) bad protocol magic '%s'", c->fd, protoMagic);
-				freeClient(c);
 				break;
 			}
 			log_debug("current len = %d", sdslen(c->querybuf));
 			sdsrange(c->querybuf, 4, -1);
 			c->proto_type = PROTO_INIT;
+			c->state = STATE_INIT;
 		}
 		if(c->proto_type == PROTO_INIT) {
 			newline = (char *)memchr(c->querybuf,'\n', sdslen(c->querybuf));
@@ -77,8 +136,6 @@ static void processInputBuffer(client *c) {
 			}
 			rangeLen = (newline - c->querybuf);
 			tokens = sdssplitlen(c->querybuf, rangeLen, " ", 1, &count);
-			for (int j = 0; j < count; j++) 
-				printf("value = %s\n", tokens[j]);
 			if(sdscmp(tokens[0], sdsnew("SUB")) == 0) {
 				c->proto_type = PROTO_SUB;
 				c->execProc = sub;
@@ -90,7 +147,8 @@ static void processInputBuffer(client *c) {
 				c->execProc = fin;
 			} else if(sdscmp(tokens[0], sdsnew("GET")) == 0) {
 			} else {
-				log_error("client(%d) bad protocol '%s'", c->fd, tokens[0]);
+				addReplyError(c, "bad command");
+				log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
 				freeClient(c);
 				break;
 			}
@@ -149,7 +207,11 @@ static client *createClient(aeEventLoop *el, int fd) {
         }
 	}
 	c->fd = fd;
+	c->sentlen = 0;
 	c->proto_type = 0;
+	c->flags = 0;
+	c->state = 0;
+	c->bufpos = 0;
 	c->querybuf = sdsempty();
 	return c;
 }
@@ -190,9 +252,11 @@ tcpServer *buildTcpServer(char *ipaddr, int port, int backlog, void *context) {
     if(tcpListener == NULL) {
         return NULL;
     }
+	int slen = strlen(ipaddr);
     tcpListener->port = port;
     tcpListener->tcp_backlog = backlog;
-    memcpy(tcpListener->ipaddr, ipaddr, strlen(ipaddr));
+    memcpy(tcpListener->ipaddr, ipaddr, slen);
+	tcpListener->ipaddr[slen] = '\0';
     tcpListener->ctx = context;
 
     int fd;
@@ -231,12 +295,12 @@ int fin(client *c, sds *tokens, int count) {
 int sub(client *c, sds *tokens, int count) {
 	// not allow same client repeat sub
 	if(c->state != STATE_INIT) {
-		log_error("E_INVALID: cannot SUB in current state");
+		log_error("E_INVALID1: cannot SUB in current state");
 		goto failed;
 	}
 
 	if(count < 3) {
-		log_error("E_INVALID: SUB insufficient number of parameters");
+		log_error("E_INVALID2: SUB insufficient number of parameters");
 		goto failed;
 	}
 
@@ -248,6 +312,7 @@ int sub(client *c, sds *tokens, int count) {
 	c->state = STATE_SUBSCRIBED;
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
+	log_debug("add reply string = ok");
 	addReplyString(c, "OK", 2);
 	return C_OK;
 failed:
