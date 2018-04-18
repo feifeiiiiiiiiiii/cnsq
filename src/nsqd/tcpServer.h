@@ -42,10 +42,9 @@ typedef struct client {
     protoProc *execProc;
     void *ctx;
 
-    int sentlen;  
+    int total_sent_bytes;  
     /* Response buffer */
-    int bufpos;
-    char buf[PROTO_REPLY_CHUNK_BYTES];
+    sds buf;
 } client;
 
 typedef struct tcpServer {

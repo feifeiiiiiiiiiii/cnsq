@@ -18,18 +18,13 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     size_t objmem;
 	UNUSED(el);
 	UNUSED(mask);
-
-	while(c->bufpos > 0) {
-		nwritten = write(fd,c->buf+c->sentlen,c->bufpos-c->sentlen);
+	
+	while(sdslen(c->buf)) {
+		nwritten = write(fd,c->buf,sdslen(c->buf));
 		if (nwritten <= 0) break;
-		c->sentlen += nwritten;
 
-		/* If the buffer was sent, set bufpos to zero to continue with
-			* the remainder of the reply. */
-		if (c->sentlen == c->bufpos) {
-			c->bufpos = 0;
-			c->sentlen = 0;
-		}
+		c->total_sent_bytes += nwritten;
+		sdsrange(c->buf, nwritten, -1);
 	}
 	if (nwritten == -1) {
         if (errno == EAGAIN) {
@@ -40,11 +35,9 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
     }
-	if (c->bufpos == 0) {
-        c->sentlen = 0;
+	if (sdslen(c->buf) == 0) {
         aeDeleteFileEvent(el,c->fd, AE_WRITABLE);
         /* Close connection after entire reply has been sent. */
-		log_debug("c->flags = %d", c->flags);
         if (c->flags & REDIS_CLOSE_AFTER_REPLY) freeClient(c);
     }
 }
@@ -53,18 +46,15 @@ static int prepareClientToWrite(client *c) {
 	if (c->fd <= 0) return C_ERR; /* Fake client */
 	tcpServer *serv = (tcpServer *)c->ctx;
 
-    if (c->bufpos == 0 &&
+    if (sdslen(c->buf) == 0 &&
         aeCreateFileEvent(serv->el, c->fd, AE_WRITABLE,
         sendReplyToClient, c) == AE_ERR) return C_ERR;
     return C_OK;
 }
 
 static int _addReplyToBuffer(client *c, const char *s, size_t len) {
-	size_t available = sizeof(c->buf)-c->bufpos;
-    if (len > available) return C_ERR;
-
-    memcpy(c->buf+c->bufpos,s,len);
-    c->bufpos+=len;
+	c->buf = sdsMakeRoomFor(c->buf, len);
+	sdscatlen(c->buf, s, len);
     return C_OK;
 }
 
@@ -87,7 +77,7 @@ int sub(client *c, sds *tokens, int count);
 int pub(client *c, sds *tokens, int count);
 
 static void freeClient(client *c) {
-	log_debug("freeClient");
+	log_debug("freeClient: Client has sent total %d bytes", c->total_sent_bytes);
 	if(c->fd != -1) {
 		tcpServer *listener = c->ctx;
         /* Unregister async I/O handlers and close the socket. */
@@ -96,6 +86,7 @@ static void freeClient(client *c) {
         close(c->fd);
         c->fd = -1;
     }
+	sdsfree(c->buf);
 	sdsfree(c->querybuf);
 	s_free(c);
 }
@@ -206,11 +197,11 @@ static client *createClient(aeEventLoop *el, int fd) {
         }
 	}
 	c->fd = fd;
-	c->sentlen = 0;
+	c->total_sent_bytes = 0;
 	c->proto_type = 0;
 	c->flags = 0;
 	c->state = 0;
-	c->bufpos = 0;
+	c->buf = sdsempty();
 	c->querybuf = sdsempty();
 	return c;
 }
