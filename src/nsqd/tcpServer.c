@@ -10,6 +10,25 @@ static void freeClient(client *c);
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 static void processInputBuffer(client *c);
 
+int _addReplyToBuffer(client *c, const char *s, size_t len) {
+    return C_OK;
+}
+
+void addReplyString(client *c, const char *s, size_t len) {
+}
+
+void addReplyErrorLength(client *c, const char *s, size_t len) {
+}
+
+void addReplyError(client *c, const char *err) {
+    addReplyErrorLength(c, err, strlen(err));
+}
+
+
+int fin(client *c, sds *tokens, int count);
+int sub(client *c, sds *tokens, int count);
+int pub(client *c, sds *tokens, int count);
+
 static void freeClient(client *c) {
 	log_debug("freeClient");
 	if(c->fd != -1) {
@@ -25,13 +44,17 @@ static void freeClient(client *c) {
 }
 
 static void processInputBuffer(client *c) {
+	char *newline = NULL;
+	sds *tokens;
+	int count;
+	int rangeLen = 0;
+	
 	while(sdslen(c->querybuf)) {
-		if(!c->reqtype) {
+		if(!c->proto_type) {
 			if(sdslen(c->querybuf) < 4) {
 				break;
 			}
-
-			/* magic str */
+			/* magic str [space][space][V][2] */
 			char protoMagic[5];
 			memcpy(protoMagic, c->querybuf, 4);
 			protoMagic[4] = '\0';
@@ -40,13 +63,41 @@ static void processInputBuffer(client *c) {
 
 			if(memcmp(protoMagic, "  V2", 4) != 0) {
 				log_error("client(%d) bad protocol magic '%s'", c->fd, protoMagic);
-				close(c->fd);
 				freeClient(c);
 				break;
 			}
 			log_debug("current len = %d", sdslen(c->querybuf));
 			sdsrange(c->querybuf, 4, -1);
-			c->reqtype = 1;
+			c->proto_type = PROTO_INIT;
+		}
+		if(c->proto_type == PROTO_INIT) {
+			newline = (char *)memchr(c->querybuf,'\n', sdslen(c->querybuf));
+			if(newline == NULL) {
+				break;
+			}
+			rangeLen = (newline - c->querybuf);
+			tokens = sdssplitlen(c->querybuf, rangeLen, " ", 1, &count);
+			for (int j = 0; j < count; j++) 
+				printf("value = %s\n", tokens[j]);
+			if(sdscmp(tokens[0], sdsnew("SUB")) == 0) {
+				c->proto_type = PROTO_SUB;
+				c->execProc = sub;
+			} else if(sdscmp(tokens[0], sdsnew("PUB")) == 0) {
+				c->proto_type = PROTO_PUB;
+				c->execProc = pub;
+			} else if(sdscmp(tokens[0], sdsnew("FIN")) == 0) {
+				c->proto_type = PROTO_FIN;
+				c->execProc = fin;
+			} else if(sdscmp(tokens[0], sdsnew("GET")) == 0) {
+			} else {
+				log_error("client(%d) bad protocol '%s'", c->fd, tokens[0]);
+				freeClient(c);
+				break;
+			}
+		}
+		if(c->execProc) {
+			sdsrange(c->querybuf, rangeLen+1, -1);
+			c->execProc(c, tokens, count);
 		}
 		break;
 	}
@@ -98,6 +149,7 @@ static client *createClient(aeEventLoop *el, int fd) {
         }
 	}
 	c->fd = fd;
+	c->proto_type = 0;
 	c->querybuf = sdsempty();
 	return c;
 }
@@ -166,6 +218,60 @@ failed:
 }
 
 void tcpServerRun(tcpServer *tcpLister) {
-	log_debug("nsqd server listening in %s:%d\n", tcpLister->ipaddr, tcpLister->port);
+	log_debug("nsqd server listening in %s:%d", tcpLister->ipaddr, tcpLister->port);
     aeMain(tcpLister->el);
+}
+
+int fin(client *c, sds *tokens, int count) {
+	c->execProc = NULL;
+	c->proto_type = PROTO_INIT;
+	return C_OK;
+}
+
+int sub(client *c, sds *tokens, int count) {
+	// not allow same client repeat sub
+	if(c->state != STATE_INIT) {
+		log_error("E_INVALID: cannot SUB in current state");
+		goto failed;
+	}
+
+	if(count < 3) {
+		log_error("E_INVALID: SUB insufficient number of parameters");
+		goto failed;
+	}
+
+	tcpServer *serv = (tcpServer *)c->ctx;
+	//NSQD *n = (NSQD *)serv->ctx;
+
+	//topic *t = newTopic(tokens[1]);
+	
+	c->state = STATE_SUBSCRIBED;
+	c->execProc = NULL;
+	c->proto_type = PROTO_INIT;
+	addReplyString(c, "OK", 2);
+	return C_OK;
+failed:
+	c->execProc = NULL;
+	addReplyError(c, "E_INVALID");
+	return C_ERR;
+}
+
+int pub(client *c, sds *tokens, int count) { 
+	c->execProc = NULL;
+	c->proto_type = PROTO_INIT;
+	return C_OK;
+}
+
+int get(client *c, sds *tokens, int count) {
+	if(c->state != STATE_SUBSCRIBED) {
+		log_error("E_INVALID: cannot GET in current state");
+		goto failed;
+	}
+	c->execProc = NULL;
+	c->proto_type = PROTO_INIT;
+	return C_OK;
+failed:
+	c->execProc = NULL;
+	addReplyError(c, "E_INVALID");
+	return C_ERR;
 }
