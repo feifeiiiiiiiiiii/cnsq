@@ -1,5 +1,6 @@
 #include "topic.h"
 #include "common.h"
+#include "../util/log.h"
 
 topic *newTopic(sds name) {
     topic *t = sds_malloc(sizeof(topic));
@@ -10,5 +11,6 @@ topic *newTopic(sds name) {
 }
 
 int putMessage(topic *topic, NSQMessage *message) {
+    log_debug("msgId = %s, data = %s", message->id, message->body);
     return 1;
 }

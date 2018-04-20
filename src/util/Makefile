@@ -1,4 +1,4 @@
-OBJS = log.o sds.o dict.o siphash.o
+OBJS = log.o sds.o dict.o siphash.o uuid.o
 all: $(OBJS)
 	ar -cru ./libutil.a ${OBJS}
 
@@ -13,6 +13,9 @@ dict.o: dict.h
 
 siphash.o:
 	gcc -c siphash.c
+
+uuid.o: uuid.h
+	gcc -c uuid.c
 
 clean:
 	rm -f *.a *.o *.exe

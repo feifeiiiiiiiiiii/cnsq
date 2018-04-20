@@ -354,7 +354,7 @@ int pub(client *c, sds *tokens, int count) {
 
 	tcpServer *serv = (tcpServer *)c->ctx;
 	topic *t = getTopic(serv->ctx, topicName);
-	NSQMessage *msg = nsq_encode_message(c->querybuf + hasread + 4, len);
+	NSQMessage *msg = newMessage(c->querybuf + hasread + 4, len);
 
 	int ret = putMessage(t, msg);
 

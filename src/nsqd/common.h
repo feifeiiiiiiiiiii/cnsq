@@ -15,11 +15,12 @@ typedef struct NSQD {
 typedef struct NSQMessage {
     int64_t timestamp;
     uint16_t attempts;
-    char id[16+1];
+    char id[37];
     size_t body_length;
     char *body;
 } NSQMessage;
 
+NSQMessage *newMessage(const char *data, size_t data_len);
 NSQMessage *nsq_decode_message(const char *data, size_t data_length);
 NSQMessage *nsq_encode_message(const char *data, size_t data_length);
 
