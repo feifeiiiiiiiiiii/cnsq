@@ -1,4 +1,5 @@
 #include "tcpServer.h"
+#include "common.h"
 #include "../util/sdsalloc.h"
  
 static char neterr[256];
@@ -35,7 +36,6 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
     }
-
 	if (sdslen(c->buf) == 0) {
         aeDeleteFileEvent(el,c->fd, AE_WRITABLE);
         /* Close connection after entire reply has been sent. */
@@ -78,7 +78,6 @@ int sub(client *c, sds *tokens, int count);
 int pub(client *c, sds *tokens, int count);
 
 static void freeClient(client *c) {
-	if(c == NULL) return;
 	log_debug("freeClient: Client has sent total %d bytes", c->total_sent_bytes);
 	if(c->fd != -1) {
 		tcpServer *listener = c->ctx;
@@ -100,7 +99,6 @@ static void processInputBuffer(client *c) {
 	int rangeLen = 0;
 	
 	while(sdslen(c->querybuf)) {
-		if (c->flags & REDIS_CLOSE_AFTER_REPLY) return;
 		if(!c->proto_type) {
 			if(sdslen(c->querybuf) < 4) {
 				break;
@@ -150,16 +148,17 @@ static void processInputBuffer(client *c) {
 		if(c->execProc) {
 			if(c->execProc(c, tokens, count) == C_OK) {
 				sdsrange(c->querybuf, rangeLen+1, -1);
-				log_debug("sdsrange %s, %d", tokens[0], sdslen(c->querybuf));
+			} else {
+				break;
 			}
+		} else {
+			break;
 		}
-		break;
 	}
 }
 
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 	client *c = (client*) privdata;
-
 	int nread, readlen;
 	size_t qblen;
 	UNUSED(el);
@@ -185,8 +184,6 @@ static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mas
         return;
     }
 	sdsIncrLen(c->querybuf, nread);	
-	log_debug("recevie data: %d, %s", sdslen(c->querybuf), c->querybuf);
-
 	// process
 	processInputBuffer(c);
 }
@@ -313,6 +310,7 @@ int sub(client *c, sds *tokens, int count) {
 	c->state = STATE_SUBSCRIBED;
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
+	log_debug("add reply string = ok");
 	addReplyString(c, "OK", 2);
 	return C_OK;
 failed:
@@ -329,7 +327,6 @@ failed:
 int pub(client *c, sds *tokens, int count) { 
 	if(count < 2) {
 		addReplyError(c, "E_INVALID");
-		c->execProc = NULL;
 		log_debug("E_INVALID: PUB insufficient number of parameters");
 		goto failed;
 	}
@@ -340,7 +337,6 @@ int pub(client *c, sds *tokens, int count) {
 	size_t hasread = 0;
 	for(int i = 0; i < count; i++) {
 		hasread += sdslen(tokens[i]);
-		log_debug("%s", tokens[i]);
 	}
 	hasread += 2; // "\n"
 
@@ -348,35 +344,31 @@ int pub(client *c, sds *tokens, int count) {
 		log_debug("PUB: need more data");
 		goto failed;
 	}
-	uint32_t *bodyLen;
+	uint32_t *bodyLen, len;
 	log_debug("read = %d %d", sdslen(c->querybuf), hasread);
 	bodyLen = (uint32_t *)(c->querybuf + hasread);
-	*bodyLen = ntohl(*bodyLen);
-	log_debug("bodylen = %d", *bodyLen);
-
-	if(sdslen(c->querybuf) >= PROTO_IOBUF_LEN) {
-		c->flags |= REDIS_CLOSE_AFTER_REPLY;
-		log_debug("msg body large");
-		addReplyError(c, "BODY large");
-		c->execProc = NULL;
+	len = ntohl(*bodyLen);
+	if(len > (sdslen(c->querybuf) - hasread - 4)) {
 		goto failed;
 	}
 
-	if((*bodyLen) <= (sdslen(c->querybuf) - hasread - 4)) {
-		char buf[*bodyLen];
-		memcpy(buf, c->querybuf + hasread + 4, *bodyLen);
-		buf[*bodyLen] = '\0';
-		log_debug("PUB msg: %d, %s", *bodyLen, buf);
-		sdsrange(c->querybuf, *bodyLen + 4, -1);
+	tcpServer *serv = (tcpServer *)c->ctx;
+	topic *t = getTopic(serv->ctx, topicName);
+	NSQMessage *msg = nsq_encode_message(c->querybuf + hasread + 4, len);
+
+	int ret = putMessage(t, msg);
+
+	if(ret == 0) {
 		addReplyString(c, "OK", 2);
 	} else {
-		log_debug("PUB: need more data");
-		goto failed;
+		addReplyError(c, "E_PUB_FAILED");
 	}
+	sdsrange(c->querybuf, 4+len, -1);
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
 failed:
+	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_ERR;
 }

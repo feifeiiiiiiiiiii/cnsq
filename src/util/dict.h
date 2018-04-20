@@ -34,6 +34,9 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
 #ifndef __DICT_H
 #define __DICT_H
