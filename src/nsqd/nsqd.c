@@ -1,5 +1,4 @@
 #include "nsqd.h"
-#include "../util/sdsalloc.h"
 
 static uint64_t dictSdsHash(const void *key) {
     return dictGenHashFunction((unsigned char*)key, sdslen((char*)key));

@@ -2,6 +2,9 @@
 #define COMMON_H
 
 #include "../util/dict.h"
+#include "../util/queue.h"
+#include "../util/log.h"
+#include "../util/sdsalloc.h"
 #include "topic.h"
 #include <stdarg.h>
 #include <string.h>
@@ -27,6 +30,6 @@ NSQMessage *nsq_encode_message(const char *data, size_t data_length);
 void free_nsq_message(NSQMessage *msg);
 
 topic *getTopic(NSQD *n, sds topicName);
-int putMessage(topic *topic, NSQMessage *message);
+int putMessage(topic *t, NSQMessage *message);
 
 #endif //
