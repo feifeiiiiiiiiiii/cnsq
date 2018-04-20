@@ -1,9 +1,9 @@
 OBJS = tcpServer.o nsqd.o topic.o message.o
 LIBS = ../net/libnet.a ../util/libutil.a
-EXECS = nsqd
+EXECS = nsqd.out
 
 all: ${OBJS} ${NET_OBJS}
-	gcc -o nsqd ${OBJS} ${LIBS}
+	gcc -o nsqd.out ${OBJS} ${LIBS}
 
 tcpServer.o: tcpServer.h
 	gcc -c tcpServer.c
