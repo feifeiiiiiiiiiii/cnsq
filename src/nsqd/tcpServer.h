@@ -14,7 +14,7 @@
 #define PROTO_PUB 2
 #define PROTO_SUB 3
 #define PROTO_FIN 4
-#define PROTO_GET 5
+#define PROTO_POP 5
 
 #define STATE_INIT 1
 #define STATE_CLOSE 2

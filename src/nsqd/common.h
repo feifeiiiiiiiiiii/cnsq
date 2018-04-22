@@ -31,5 +31,6 @@ void free_nsq_message(NSQMessage *msg);
 
 topic *getTopic(NSQD *n, sds topicName);
 int putMessage(topic *t, NSQMessage *message);
+NSQMessage *getMessage(topic *t);
 
 #endif //

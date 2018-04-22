@@ -75,6 +75,7 @@ void addReplyError(client *c, const char *err) {
 int fin(client *c, sds *tokens, int count);
 int sub(client *c, sds *tokens, int count);
 int pub(client *c, sds *tokens, int count);
+int pop(client *c, sds *tokens, int count);
 
 static void freeClient(client *c) {
 	log_debug("freeClient: Client has sent total %d bytes", c->total_sent_bytes);
@@ -136,7 +137,9 @@ static void processInputBuffer(client *c) {
 			} else if(sdscmp(tokens[0], sdsnew("FIN")) == 0) {
 				c->proto_type = PROTO_FIN;
 				c->execProc = fin;
-			} else if(sdscmp(tokens[0], sdsnew("GET")) == 0) {
+			} else if(sdscmp(tokens[0], sdsnew("POP")) == 0) {
+				c->proto_type = PROTO_POP;
+				c->execProc = pop;
 			} else {
 				addReplyError(c, "bad command");
 				log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
@@ -373,25 +376,39 @@ failed:
 }
 
 /*
- * GET <topic_name> <channel_name>\n
+ * POP <topic_name> <channel_name>\n
  **/
-int get(client *c, sds *tokens, int count) {
+int pop(client *c, sds *tokens, int count) {
 	if(c->state != STATE_SUBSCRIBED) {
+		addReplyError(c, "E_INVALID");
 		log_error("E_INVALID: cannot GET in current state");
 		goto failed;
 	}
 
 	if(count < 3) {
+		addReplyError(c, "E_INVALID");
 		log_error("E_INVALID2: GET insufficient number of parameters");
 		goto failed;
 	}
+
+	sds topicName = tokens[1];
+
+	tcpServer *serv = (tcpServer *)c->ctx;
+	topic *t = getTopic(serv->ctx, topicName);
+
+	NSQMessage *msg = getMessage(t);
+	if(msg == NULL) {
+		addReplyError(c, "E_PENDING");
+		goto failed;
+	}
+	log_debug("pop message = msgId = %s", msg->id);
+	addReplyString(c, msg->body, msg->body_length);
 
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
 failed:
 	c->execProc = NULL;
-	addReplyError(c, "E_INVALID");
 	c->proto_type = PROTO_INIT;
 	return C_ERR;
 }

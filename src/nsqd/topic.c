@@ -21,3 +21,13 @@ int putMessage(topic *t, NSQMessage *message) {
     ngx_queue_insert_tail(&t->memoryQueue, &item->queue);
     return 0;
 }
+
+NSQMessage *getMessage(topic *t) {
+    ngx_queue_t *q;
+    qitem *item;
+    if(ngx_queue_empty(&t->memoryQueue)) return NULL;
+    q = ngx_queue_head(&t->memoryQueue);
+    item = (qitem *)ngx_queue_data(q, qitem, queue);
+    ngx_queue_remove(&item->queue);
+    return item->msg;
+}
