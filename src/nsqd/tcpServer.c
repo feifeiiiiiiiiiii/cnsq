@@ -10,7 +10,7 @@ static void freeClient(client *c);
 static void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 static void processInputBuffer(client *c);
 static int prepareClientToWrite(client *c);
-static int _addReplyToBuffer(client *c, const char *s, size_t len);
+static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t frameType);
 
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 	client *c = privdata;
@@ -52,23 +52,32 @@ static int prepareClientToWrite(client *c) {
     return C_OK;
 }
 
-static int _addReplyToBuffer(client *c, const char *s, size_t len) {
-	c->buf = sdsMakeRoomFor(c->buf, len);
+// [len][frameType][data]
+static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t frameType) {
+	c->buf = sdsMakeRoomFor(c->buf, len+4+4);
+	uint32_t slen = htonl(len);
+	char *c_str = (void *)&slen;
+	sdscatlen(c->buf, c_str, 4);
+	
+	slen = htonl(frameType);
+	c_str = (void *)&slen; 
+	sdscatlen(c->buf, c_str, 4);
+
 	sdscatlen(c->buf, s, len);
     return C_OK;
 }
 
-void addReplyString(client *c, const char *s, size_t len) {
+void addReplyString(client *c, const char *s, size_t len, uint32_t frameType) {
 	if (prepareClientToWrite(c) != C_OK) return;
-    _addReplyToBuffer(c,s,len);
+    _addReplyToBuffer(c,s,len, frameType);
 }
 
-void addReplyErrorLength(client *c, const char *s, size_t len) {
-	addReplyString(c,s,len);
+void addReplyErrorLength(client *c, const char *s, size_t len, uint32_t frameType) {
+	addReplyString(c,s,len, frameType);
 }
 
-void addReplyError(client *c, const char *err) {
-    addReplyErrorLength(c, err, strlen(err));
+void addReplyError(client *c, const char *err, uint32_t frameType) {
+    addReplyErrorLength(c, err, strlen(err), frameType);
 }
 
 
@@ -112,7 +121,7 @@ static void processInputBuffer(client *c) {
 
 			if(memcmp(protoMagic, "  V2", 4) != 0) {
 				c->flags |= REDIS_CLOSE_AFTER_REPLY;
-				addReplyError(c, "bad protocol magic");
+				addReplyError(c, "bad protocol magic", FrameTypeError);
 				log_error("client(%d) bad protocol magic '%s'", c->fd, protoMagic);
 				break;
 			}
@@ -141,7 +150,7 @@ static void processInputBuffer(client *c) {
 				c->proto_type = PROTO_POP;
 				c->execProc = pop;
 			} else {
-				addReplyError(c, "bad command");
+				addReplyError(c, "bad command", FrameTypeError);
 				log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
 				freeClient(c);
 				break;
@@ -313,12 +322,12 @@ int sub(client *c, sds *tokens, int count) {
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	log_debug("add reply string = ok");
-	addReplyString(c, "OK", 2);
+	addReplyString(c, "OK", 2, FrameTypeResponse);
 	return C_OK;
 failed:
 	c->proto_type = PROTO_INIT;
 	c->execProc = NULL;
-	addReplyError(c, "E_INVALID");
+	addReplyError(c, "E_INVALID", FrameTypeError);
 	return C_ERR;
 }
 
@@ -328,7 +337,7 @@ failed:
  **/
 int pub(client *c, sds *tokens, int count) { 
 	if(count < 2) {
-		addReplyError(c, "E_INVALID");
+		addReplyError(c, "E_INVALID", FrameTypeError);
 		log_debug("E_INVALID: PUB insufficient number of parameters");
 		goto failed;
 	}
@@ -361,9 +370,9 @@ int pub(client *c, sds *tokens, int count) {
 	int ret = putMessage(t, msg);
 
 	if(ret == 0) {
-		addReplyString(c, "OK", 2);
+		addReplyString(c, "OK", 2, FrameTypeResponse);
 	} else {
-		addReplyError(c, "E_PUB_FAILED");
+		addReplyError(c, "E_PUB_FAILED", FrameTypeError);
 	}
 	sdsrange(c->querybuf, 4+len, -1);
 	c->execProc = NULL;
@@ -380,13 +389,13 @@ failed:
  **/
 int pop(client *c, sds *tokens, int count) {
 	if(c->state != STATE_SUBSCRIBED) {
-		addReplyError(c, "E_INVALID");
+		addReplyError(c, "E_INVALID", FrameTypeError);
 		log_error("E_INVALID: cannot GET in current state");
 		goto failed;
 	}
 
 	if(count < 3) {
-		addReplyError(c, "E_INVALID");
+		addReplyError(c, "E_INVALID", FrameTypeError);
 		log_error("E_INVALID2: GET insufficient number of parameters");
 		goto failed;
 	}
@@ -398,11 +407,11 @@ int pop(client *c, sds *tokens, int count) {
 
 	NSQMessage *msg = getMessage(t);
 	if(msg == NULL) {
-		addReplyError(c, "E_PENDING");
+		addReplyError(c, "E_PENDING", FrameTypeResponse);
 		goto failed;
 	}
 	log_debug("pop message = msgId = %s", msg->id);
-	addReplyString(c, msg->body, msg->body_length);
+	addReplyString(c, msg->body, msg->body_length, FrameTypeMessage);
 
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;

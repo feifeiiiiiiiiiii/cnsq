@@ -16,6 +16,10 @@
 #define PROTO_FIN 4
 #define PROTO_POP 5
 
+#define FrameTypeResponse 0
+#define FrameTypeError    1
+#define FrameTypeMessage  2
+
 #define STATE_INIT 1
 #define STATE_CLOSE 2
 #define STATE_SUBSCRIBED 3
@@ -63,8 +67,8 @@ typedef struct tcpServer {
 tcpServer *buildTcpServer(char *ipaddr, int port, int tcp_backlog, void *context);
 void tcpServerRun(tcpServer *tcpLister);
 
-void addReplyString(client *c, const char *s, size_t len);
-void addReplyErrorLength(client *c, const char *s, size_t len);
-void addReplyError(client *c, const char *err);
+void addReplyString(client *c, const char *s, size_t len, uint32_t frameType);
+void addReplyErrorLength(client *c, const char *s, size_t len, uint32_t frameType);
+void addReplyError(client *c, const char *err, uint32_t frameType);
 
 #endif //
