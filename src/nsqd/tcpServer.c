@@ -12,6 +12,13 @@ static void processInputBuffer(client *c);
 static int prepareClientToWrite(client *c);
 static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t frameType);
 
+static void conv2BE(int n, char *buf) {
+	buf[3] = (n >> 24) & 0xFF;
+	buf[2] = (n >> 16) & 0xFF;
+	buf[1] = (n >> 8) & 0xFF;
+	buf[0] = n & 0xFF;
+}
+
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 	client *c = privdata;
     int nwritten = 0;
@@ -55,13 +62,12 @@ static int prepareClientToWrite(client *c) {
 // [len][frameType][data]
 static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t frameType) {
 	c->buf = sdsMakeRoomFor(c->buf, len+4+4);
-	uint32_t slen = htonl(len);
-	char *c_str = (void *)&slen;
-	sdscatlen(c->buf, c_str, 4);
+	char buf[4];
+	conv2BE(htonl(len), buf);
+	sdscatlen(c->buf, buf, 4);
 	
-	slen = htonl(frameType);
-	c_str = (void *)&slen; 
-	sdscatlen(c->buf, c_str, 4);
+	conv2BE(htonl(frameType), buf);
+	sdscatlen(c->buf, buf, 4);
 
 	sdscatlen(c->buf, s, len);
     return C_OK;
