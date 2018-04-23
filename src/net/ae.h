@@ -1,6 +1,11 @@
 #ifndef __AE_H_
 #define __AE_H_
 
+/* Test for polling API */
+#ifdef __linux__
+#define HAVE_EPOLL 1
+#endif
+
 #define AE_OK 0
 #define AE_ERR -1
 
