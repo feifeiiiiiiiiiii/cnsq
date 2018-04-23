@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
+#include <arpa/inet.h>
 
 typedef struct NSQD {
     void *tcpListener;
