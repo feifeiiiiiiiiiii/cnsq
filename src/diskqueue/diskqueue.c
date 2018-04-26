@@ -26,9 +26,9 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     u32 pathLen = strlen(dataPath)+1;
     diskqueue *d = (diskqueue *)malloc(sizeof(diskqueue));
 
-    if(d == NULL) 
+    if(d == NULL)
         return NULL;
-    
+
     d->name = (char *)malloc((nameLen));
     if(d->name == NULL)
         goto failed;
@@ -39,7 +39,7 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
         goto failed;
     memcpy(d->dataPath, dataPath, pathLen);
 
-    pthread_mutex_init(&d->mutex, NULL);    
+    pthread_mutex_init(&d->mutex, NULL);
 
     d->maxBytesPerFile = maxBytesPerFile;
     d->minMsgSize = minMsgSize;
@@ -55,7 +55,7 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     res = retrieveMetaData(d);
 
     //ioLoop(d);
-    
+
     return d;
 
 failed:
@@ -81,8 +81,8 @@ int retrieveMetaData(diskqueue *d)
         printf("%s, %s\n", fileName, strerror(errno));
         goto failed;
     }
-    fscanf(f, "%lld\n%lld,%lld\n%lld,%lld\n", 
-                &d->depth, 
+    fscanf(f, "%lld\n%lld,%lld\n%lld,%lld\n",
+                &d->depth,
                 &d->readFileNum, &d->readPos,
                 &d->writeFileNum, &d->writePos);
 
@@ -108,7 +108,7 @@ char *metaDataFileName(diskqueue *d)
     return fileName;
 }
 
-static 
+static
 char *fileName(diskqueue *d, u32 filenum) {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 7;
     char *fileName = malloc(len+1);
@@ -116,7 +116,7 @@ char *fileName(diskqueue *d, u32 filenum) {
     return fileName;
 }
 
-static 
+static
 void ioLoop(diskqueue *d)
 {
     pthread_t   thread[2];
@@ -165,12 +165,14 @@ void *readOne(diskqueue *d) {
             if(err != 0) {
                 fclose(d->readFile);
                 d->readFile = NULL;
+                free(curFileName);
                 return NULL;
             }
         }
+        free(curFileName);
     }
 
-    rc = fread(&msgSize, 1, sizeof(u32), d->readFile); 
+    rc = fread(&msgSize, 1, sizeof(u32), d->readFile);
     if(rc <= 0) {
         fclose(d->readFile);
         d->readFile = NULL;
@@ -192,9 +194,11 @@ void *readOne(diskqueue *d) {
     if(rc <= 0) {
         fclose(d->readFile);
         d->readFile = NULL;
+        free(chunk->data);
+        free(chunk);
         return 0;
     }
-    
+
     u64 totalBytes = (4 + msgSize);
 
     d->nextReadPos = d->readPos + totalBytes;
@@ -213,7 +217,7 @@ void *readOne(diskqueue *d) {
 }
 
 void *readData(diskqueue *d) {
-    qchunk *chunk;
+    qchunk *chunk = NULL;
     if(((d->readFileNum < d->writeFileNum) || (d->readPos < d->writePos))) {
         if(d->nextReadPos == d->readPos) {
             chunk = readOne(d);
@@ -237,7 +241,7 @@ void moveForward(diskqueue *d) {
     d->depth -= 1;
 
     if(oldReadFileNum != d->nextReadFileNum) {
-        
+
         const char *fn = fileName(d, oldReadFileNum);
         int ret = remove(fn);
         if(ret != 0) {
@@ -326,24 +330,26 @@ int persistMetaData(diskqueue *d)
     printf("%s\n", tmpFileName);
     f = fopen(tmpFileName, "w");
     if(f == NULL) {
+        free(fileName);
         printf("%s, %s\n", tmpFileName, strerror(errno));
         return 0;
     }
     fprintf(f, "%lld\n%lld,%lld\n%lld,%lld\n",
-            d->depth, 
+            d->depth,
             d->readFileNum, d->readPos,
             d->writeFileNum, d->writePos);
 
     fflush(f);
     fclose(f);
     rename(tmpFileName, fileName);
+    free(fileName);
     return 1;
 }
 
 int
 putData(diskqueue *d, char *data, const u32 dataLen)
 {
-    pthread_mutex_lock(&d->mutex); 
+    pthread_mutex_lock(&d->mutex);
     writeOne(d, data, dataLen);
     pthread_mutex_unlock(&d->mutex);
     return 1;
@@ -372,17 +378,18 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
                 return 0;
             }
         }
+        free(curFileName);
     }
 
     if(dataLen < d->minMsgSize || dataLen > d->maxMsgSize) {
         return 0;
     }
-    
+
     u32 len32 = htonl(dataLen);
-    
+
     // 需要合并一次写入
     err = fwrite(&len32, 4, 1, d->writeFile);
-    if(err <= 0) { 
+    if(err <= 0) {
        return 0;
     }
     err = fwrite(data, dataLen, 1, d->writeFile);
@@ -421,7 +428,7 @@ void handleReadError(diskqueue *d)
         d->writeFileNum++;
         d->writePos = 0;
     }
-    
+
     char *badFn = fileName(d, d->readFileNum);
     char *badRenameFn = malloc(sizeof(strlen(badFn)) + 5);
     sprintf(badRenameFn, "%s.bad", badFn);
