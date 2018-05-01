@@ -15,6 +15,7 @@
 #define PROTO_SUB 3
 #define PROTO_FIN 4
 #define PROTO_POP 5
+#define PROTO_PING 6
 
 #define FrameTypeResponse 0
 #define FrameTypeError    1
