@@ -91,6 +91,7 @@ int fin(client *c, sds *tokens, int count);
 int sub(client *c, sds *tokens, int count);
 int pub(client *c, sds *tokens, int count);
 int pop(client *c, sds *tokens, int count);
+int ping(client *c, sds *tokens, int count);
 
 static void freeClient(client *c) {
 	log_debug("freeClient: Client has sent total %d bytes", c->total_sent_bytes);
@@ -155,6 +156,9 @@ static void processInputBuffer(client *c) {
 			} else if(sdscmp(tokens[0], sdsnew("POP")) == 0) {
 				c->proto_type = PROTO_POP;
 				c->execProc = pop;
+			} else if(sdscmp(tokens[0], sdsnew("PING")) == 0) {
+				c->proto_type = PROTO_PING;
+				c->execProc = ping;
 			} else {
 				addReplyError(c, "bad command", FrameTypeError);
 				log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
@@ -310,12 +314,12 @@ int fin(client *c, sds *tokens, int count) {
 int sub(client *c, sds *tokens, int count) {
 	// not allow same client repeat sub
 	if(c->state != STATE_INIT) {
-		log_error("E_INVALID1: cannot SUB in current state");
+		log_error("E_INVALID: cannot SUB in current state");
 		goto failed;
 	}
 
 	if(count < 3) {
-		log_error("E_INVALID2: SUB insufficient number of parameters");
+		log_error("E_INVALID: SUB insufficient number of parameters");
 		goto failed;
 	}
 
@@ -396,13 +400,13 @@ failed:
 int pop(client *c, sds *tokens, int count) {
 	if(c->state != STATE_SUBSCRIBED) {
 		addReplyError(c, "E_INVALID", FrameTypeError);
-		log_error("E_INVALID: cannot GET in current state");
+		log_error("E_INVALID: cannot POP in current state");
 		goto failed;
 	}
 
 	if(count < 3) {
 		addReplyError(c, "E_INVALID", FrameTypeError);
-		log_error("E_INVALID2: GET insufficient number of parameters");
+		log_error("E_INVALID: POP insufficient number of parameters");
 		goto failed;
 	}
 
@@ -413,7 +417,7 @@ int pop(client *c, sds *tokens, int count) {
 
 	NSQMessage *msg = getMessage(t);
 	if(msg == NULL) {
-		addReplyError(c, "E_PENDING", FrameTypeResponse);
+		addReplyString(c, "E_PENDING", 10, FrameTypeResponse);
 		goto failed;
 	}
 	log_debug("pop message = msgId = %s", msg->id);
@@ -426,4 +430,9 @@ failed:
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_ERR;
+}
+
+int ping(client *c, sds *tokens, int count) {
+	addReplyString(c, "PONG", 4, FrameTypeResponse);
+	return C_OK;
 }
