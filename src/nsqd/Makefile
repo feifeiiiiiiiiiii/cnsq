@@ -1,5 +1,5 @@
 OBJS = tcpServer.o nsqd.o topic.o message.o
-LIBS = ../net/libnet.a ../util/libutil.a
+LIBS = ../net/libnet.a ../util/libutil.a ../diskqueue/libdiskqueue.a
 EXECS = nsqd.out
 
 all: ${OBJS} ${NET_OBJS}

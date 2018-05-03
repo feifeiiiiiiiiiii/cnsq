@@ -330,7 +330,7 @@ int persistMetaData(diskqueue *d)
     printf("%s\n", tmpFileName);
     f = fopen(tmpFileName, "w");
     if(f == NULL) {
-        free(fileName);
+        free((char *)fileName);
         printf("%s, %s\n", tmpFileName, strerror(errno));
         return 0;
     }
@@ -342,7 +342,7 @@ int persistMetaData(diskqueue *d)
     fflush(f);
     fclose(f);
     rename(tmpFileName, fileName);
-    free(fileName);
+    free((char *)fileName);
     return 1;
 }
 
