@@ -47,14 +47,9 @@ typedef struct {
     char    *dataPath;
 } diskqueue;
 
-typedef struct {
-    u32 dataLen;
-    void *data;
-} qchunk;
-
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery);
-void *readOne(diskqueue *d);
-void *readData(diskqueue *d);
+void *readOne(diskqueue *d, u32 *dataLen);
+void *readData(diskqueue *d, u32 *dataLen);
 int putData(diskqueue *d, char *msg, const u32 dataLen);
 
 #endif // DISKQUEUE_H_

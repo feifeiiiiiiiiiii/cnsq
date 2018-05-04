@@ -111,7 +111,7 @@ char *fileName(diskqueue *d, u32 filenum) {
     return fileName;
 }
 
-void *readOne(diskqueue *d) {
+void *readOne(diskqueue *d, u32 *dataLen) {
     int err, rc;
     u32 msgSize;
 
@@ -150,16 +150,14 @@ void *readOne(diskqueue *d) {
         return NULL;
     }
 
-    qchunk *chunk = (qchunk *)malloc(sizeof(qchunk));
-    chunk->dataLen = msgSize;
-    chunk->data = (char *)malloc(msgSize+1);
+    char *data = (char *)malloc(msgSize+1);
+    *dataLen = msgSize;
 
-    rc = fread(chunk->data, 1, msgSize, d->readFile);
+    rc = fread(data, 1, msgSize, d->readFile);
     if(rc <= 0) {
         fclose(d->readFile);
         d->readFile = NULL;
-        free(chunk->data);
-        free(chunk);
+        free(data);
         return 0;
     }
 
@@ -177,24 +175,24 @@ void *readOne(diskqueue *d) {
         d->nextReadPos = 0;
     }
 
-    return chunk;
+    return data;
 }
 
-void *readData(diskqueue *d) {
-    qchunk *chunk = NULL;
+void *readData(diskqueue *d, u32 *len) {
+    char *data = NULL;
     if(((d->readFileNum < d->writeFileNum) || (d->readPos < d->writePos))) {
         if(d->nextReadPos == d->readPos) {
-            chunk = readOne(d);
-            if(chunk == NULL) {
+            data = readOne(d, len);
+            if(data == NULL) {
                 handleReadError(d);
             } else {
                 moveForward(d);
             }
         }
     } else {
-        chunk = NULL;
+        data = NULL;
     }
-    return chunk;
+    return data;
 }
 
 static
