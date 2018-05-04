@@ -1,4 +1,5 @@
 #include "diskqueue.h"
+#include "../util/log.h"
 
 #define META_FMT_STR "%s/%s.diskqueue.meta.dat"
 #define DATA_FMT_STR "%s/%s.diskqueue.%06d.dat"
@@ -42,6 +43,8 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     d->minMsgSize = minMsgSize;
     d->maxMsgSize = maxMsgSize;
     d->syncEvery = syncEvery;
+    d->writeFile = NULL;
+    d->readFile = NULL;
     d->depth = 0;
     d->readPos = 0;
     d->writePos = 0;
@@ -81,7 +84,7 @@ int retrieveMetaData(diskqueue *d)
                 &d->readFileNum, &d->readPos,
                 &d->writeFileNum, &d->writePos);
 
-    printf("depth=%lld,readFileNum=%lld,readPos=%lld,writeFileNum=%lld,writePos=%lld\n",
+    log_debug("depth=%lld,readFileNum=%lld,readPos=%lld,writeFileNum=%lld,writePos=%lld",
             d->depth, d->readFileNum, d->readPos, d->writeFileNum, d->writePos);
     d->nextReadPos = d->readPos;
     d->nextReadFileNum = d->readFileNum;
@@ -98,7 +101,7 @@ char *metaDataFileName(diskqueue *d)
 {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 2;
     char *fileName = malloc(len+1);
-    printf("%s,%s,%ld\n", d->dataPath, d->name, strlen(d->name));
+    log_debug("%s,%s,%ld", d->dataPath, d->name, strlen(d->name));
     sprintf(fileName, META_FMT_STR, d->dataPath, d->name);
     return fileName;
 }
@@ -108,6 +111,7 @@ char *fileName(diskqueue *d, u32 filenum) {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 7;
     char *fileName = malloc(len+1);
     sprintf(fileName, DATA_FMT_STR, d->dataPath, d->name, filenum);
+    fileName[len+1] = '\0';
     return fileName;
 }
 
@@ -120,6 +124,7 @@ void *readOne(diskqueue *d, u32 *dataLen) {
 
         d->readFile = fopen(curFileName, "r");
         if(d->readFile == NULL) {
+            log_debug("curFileName is error %s", curFileName);
             free(curFileName);
             return NULL;
         }
@@ -202,14 +207,15 @@ void moveForward(diskqueue *d) {
 	d->readPos = d->nextReadPos;
     d->depth -= 1;
 
+    // 
+    dqsync(d);
     if(oldReadFileNum != d->nextReadFileNum) {
 
         const char *fn = fileName(d, oldReadFileNum);
         int ret = remove(fn);
         if(ret != 0) {
-            printf("remove file failed = %s\n", fn);
+            log_debug("remove file failed = %s", fn);
         }
-        dqsync(d);
         free((void *)fn);
     }
 
@@ -289,11 +295,11 @@ int persistMetaData(diskqueue *d)
     char tmpFileName[tmpLen+1];
     sprintf(tmpFileName, TEMP_FMT_STR, fileName, (int)random()%6379);
 
-    printf("%s\n", tmpFileName);
+    log_debug("%s", tmpFileName);
     f = fopen(tmpFileName, "w");
     if(f == NULL) {
         free((char *)fileName);
-        printf("%s, %s\n", tmpFileName, strerror(errno));
+        log_debug("%s, %s\n", tmpFileName, strerror(errno));
         return 0;
     }
     fprintf(f, "%lld\n%lld,%lld\n%lld,%lld\n",
@@ -324,10 +330,11 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
 
     if(d->writeFile == NULL) {
         char *curFileName = fileName(d, d->writeFileNum);
+
         d->writeFile = fopen(curFileName, "a");
         if(d->writeFile == NULL) {
             free(curFileName);
-            printf("open file error");
+            log_debug("open file error");
             return 0;
         }
 
@@ -350,10 +357,12 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
     u32 len32 = htonl(dataLen);
 
     // 需要合并一次写入
-    err = fwrite(&len32, 4, 1, d->writeFile);
+    err = fwrite((void *)&len32, 4, 1, d->writeFile);
+
     if(err <= 0) {
        return 0;
     }
+
     err = fwrite(data, dataLen, 1, d->writeFile);
     if(err <= 0) {
         return 0;
@@ -364,13 +373,13 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
     d->writePos += (4+dataLen);
     d->depth += 1;
 
-    printf("pos=%lld,depth=%lld\n", d->writePos, d->depth);
+    log_debug("pos=%lld,depth=%lld", d->writePos, d->depth);
+    // force flush meta file TODO
+    dqsync(d);
 
     if(d->writePos > d->maxBytesPerFile) {
         d->writeFileNum++;
         d->writePos = 0;
-        dqsync(d);
-
         if(d->writeFile != NULL) {
             fclose(d->writeFile);
             d->writeFile = NULL;
@@ -397,7 +406,7 @@ void handleReadError(diskqueue *d)
 
     int ret = rename(badFn, badRenameFn);
     if(ret < 0) {
-        printf("rename error\n");
+        log_debug("rename error");
     }
 
     d->readFileNum++;
