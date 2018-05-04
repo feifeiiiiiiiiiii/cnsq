@@ -7,9 +7,6 @@
 static int retrieveMetaData(diskqueue *d);
 static char *metaDataFileName(diskqueue *d);
 static char *fileName(diskqueue *d, u32 filenum);
-static void ioLoop(diskqueue *d);
-static void workReadLoop(void *arg);
-static void workWriteLoop(void *arg);
 static void moveForward(diskqueue *d);
 static void checkTailCorruption(diskqueue *d);
 static void skipToNextRWFile(diskqueue *d);
@@ -53,8 +50,6 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     d->readFileNum = 0;
 
     res = retrieveMetaData(d);
-
-    //ioLoop(d);
 
     return d;
 
@@ -114,37 +109,6 @@ char *fileName(diskqueue *d, u32 filenum) {
     char *fileName = malloc(len+1);
     sprintf(fileName, DATA_FMT_STR, d->dataPath, d->name, filenum);
     return fileName;
-}
-
-static
-void ioLoop(diskqueue *d)
-{
-    pthread_t   thread[2];
-    pthread_attr_t attr;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
-    pthread_create(&thread[0], &attr, (void *(*)(void*))workReadLoop, (void *)d);
-    pthread_attr_destroy(&attr);
-    pthread_detach(thread[0]);
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, 1); // Preclude the need to do pthread_join on the thread after it exits.
-    pthread_create(&thread[1], &attr, (void *(*)(void*))workWriteLoop, (void *)d);
-    pthread_attr_destroy(&attr);
-    pthread_detach(thread[1]);
-}
-
-static
-void workWriteLoop(void *arg)
-{
-    diskqueue *d = (diskqueue *)arg;
-    qchunk *chunk = NULL;
-}
-
-static
-void workReadLoop(void *arg)
-{
 }
 
 void *readOne(diskqueue *d) {
