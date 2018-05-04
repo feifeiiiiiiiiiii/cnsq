@@ -11,38 +11,33 @@ topic *newTopic(sds name) {
     t->name = sdsempty();
     sdscatsds(t->name, name);
     t->memDepth = 0;
-    t->dq = New(name, DATA_PATH, MAX_BYTES_PER_FILE, MIN_MSG_SIZE, MAX_MSG_SIZE, SYNC_EVERY);
+    t->dq = New(name, "/tmp", 1024 * 1024, 28, 1024, 10);
     ngx_queue_init(&t->memoryQueue);
     return t;
 }
 
 int putMessage(topic *t, NSQMessage *message) {
     log_debug("msgId = %s, data = %s", message->id, message->body);
-    if(t->memDepth > MEM_QUEUE_SIZE) {
-        log_debug("MEM_QUEUE_OVERFLOW");
-        //putData(t->dq, (char *)message, strlen(message));
-        return 0;
-    }
+    uint32_t len = 0;
+    char *buf;
+
+    log_debug("MEM_QUEUE_OVERFLOW");
+    buf = nsq_encode_message(message, &len);
+    putData(t->dq, buf, len);
+    return 0;
+
+    /*
     qitem *item = s_malloc(sizeof(qitem));
     item->msg = message;
     ngx_queue_insert_tail(&t->memoryQueue, &item->queue);
-    t->memDepth++;
+    t->memDepth++;*/
     return 0;
 }
 
 NSQMessage *getMessage(topic *t) {
-    ngx_queue_t *q;
-    NSQMessage *msg;
-    qitem *item;
-    if(ngx_queue_empty(&t->memoryQueue)) {
-        // read file
-        return NULL;
-    }
-    q = ngx_queue_head(&t->memoryQueue);
-    item = (qitem *)ngx_queue_data(q, qitem, queue);
-    ngx_queue_remove(&item->queue);
-    msg = item->msg;
-    t->memDepth -= 1;
-    s_free(item);
-    return msg;
+    uint32_t len;
+    char *buf;
+    buf = readData(t->dq, &len);
+    log_debug("readData %d", len);
+    return NULL;
 }

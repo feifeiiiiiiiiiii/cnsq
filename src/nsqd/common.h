@@ -11,6 +11,8 @@
 #include <time.h>
 #include <arpa/inet.h>
 
+#define MSG_HEADER_LEN 53
+
 typedef struct NSQD {
     void *tcpListener;
     dict *topicMap;    
@@ -18,16 +20,15 @@ typedef struct NSQD {
 
 typedef struct NSQMessage {
     int64_t timestamp;
-    uint16_t attempts;
+    uint32_t attempts;
     char id[37];
-    size_t body_length;
+    uint32_t body_length;
     char *body;
 } NSQMessage;
 
-NSQMessage *newMessage(const char *data, size_t data_len);
-NSQMessage *nsq_decode_message(const char *data, size_t data_length);
-NSQMessage *nsq_encode_message(const char *data, size_t data_length);
-
+NSQMessage *newMessage(const char *data, uint32_t data_len);
+NSQMessage *nsq_decode_message(const char *data, uint32_t data_length);
+void *nsq_encode_message(NSQMessage *msg, uint32_t *data_length);
 void free_nsq_message(NSQMessage *msg);
 
 topic *getTopic(NSQD *n, sds topicName);
