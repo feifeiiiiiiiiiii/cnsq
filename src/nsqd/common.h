@@ -28,7 +28,7 @@ typedef struct NSQMessage {
 
 NSQMessage *newMessage(const char *data, uint32_t data_len);
 NSQMessage *nsq_decode_message(const char *data, uint32_t data_length);
-void *nsq_encode_message(NSQMessage *msg, uint32_t *data_length);
+void nsq_encode_message(NSQMessage *msg, char *buf);
 void free_nsq_message(NSQMessage *msg);
 
 topic *getTopic(NSQD *n, sds topicName);

@@ -27,21 +27,19 @@ NSQMessage *nsq_decode_message(const char *data, uint32_t data_length)
     size_t body_length;
 
     msg = (NSQMessage *)s_malloc(sizeof(NSQMessage));
-    msg->timestamp = (int64_t)ntoh64((uint8_t *)data);
-    msg->attempts = ntohs(*(uint16_t *)(data+8));
-    memcpy(&msg->id, data+10, 16);
-    body_length = data_length - 26;
-    msg->body = (char *)s_malloc(body_length);
-    memcpy(msg->body, data+26, body_length);
-    msg->body_length = body_length;
+    
+    msg->timestamp = decodeInt64((unsigned char *)data);
+    msg->attempts = decodeInt32((unsigned char *)data + 8);
+    memcpy(&msg->id, (unsigned char *)data+12, 37);
+    msg->body_length = decodeInt32((unsigned char *)data + 49);
+    msg->body = (char *)s_malloc(msg->body_length);
+    memcpy(msg->body, data+53, body_length);
 
     return msg;
 }
 
-void *nsq_encode_message(NSQMessage *msg, uint32_t *dataLen) {
+void nsq_encode_message(NSQMessage *msg, char *buf) {
     // timestamp(8) + attempts(4) + id(37) + dataLen(4) + body(dataLen)
-    *dataLen = MSG_HEADER_LEN + msg->body_length;
-    char *buf = malloc(*dataLen + 1);
     unsigned char tmp[32];
 
     encodeInt64(msg->timestamp, tmp);
@@ -57,7 +55,7 @@ void *nsq_encode_message(NSQMessage *msg, uint32_t *dataLen) {
 
     memcpy(buf + 53, msg->body, msg->body_length);
 
-    return buf;
+    return;
 }
 
 void free_nsq_message(NSQMessage *msg)

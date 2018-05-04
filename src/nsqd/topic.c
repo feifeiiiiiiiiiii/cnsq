@@ -1,5 +1,6 @@
 #include "topic.h"
 #include "common.h"
+#include <assert.h>
 
 typedef struct {
     NSQMessage *msg;
@@ -16,13 +17,14 @@ topic *newTopic(sds name) {
     return t;
 }
 
-int putMessage(topic *t, NSQMessage *message) {
-    log_debug("msgId = %s, data = %s", message->id, message->body);
-    uint32_t len = 0;
-    char *buf;
+int putMessage(topic *t, NSQMessage *msg) {
+    log_debug("msgId = %s, data = %s", msg->id, msg->body);
+    uint32_t len = MSG_HEADER_LEN + msg->body_length;
+    char *buf = malloc(len + 1);
 
     log_debug("MEM_QUEUE_OVERFLOW");
-    buf = nsq_encode_message(message, &len);
+    nsq_encode_message(msg, buf);
+    assert(buf != NULL);
     putData(t->dq, buf, len);
     return 0;
 
@@ -38,6 +40,8 @@ NSQMessage *getMessage(topic *t) {
     uint32_t len;
     char *buf;
     buf = readData(t->dq, &len);
-    log_debug("readData %d", len);
-    return NULL;
+    if(buf == NULL) return NULL;
+    assert(buf != NULL);
+    NSQMessage *msg = nsq_decode_message(buf, len);
+    return msg;
 }
