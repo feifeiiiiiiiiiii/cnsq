@@ -101,7 +101,6 @@ char *metaDataFileName(diskqueue *d)
 {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 2;
     char *fileName = malloc(len+1);
-    log_debug("%s,%s,%ld", d->dataPath, d->name, strlen(d->name));
     sprintf(fileName, META_FMT_STR, d->dataPath, d->name);
     return fileName;
 }

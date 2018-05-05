@@ -24,7 +24,6 @@ NSQMessage *newMessage(const char *data, uint32_t data_len) {
 NSQMessage *nsq_decode_message(const char *data, uint32_t data_length)
 {
     NSQMessage *msg;
-    size_t body_length;
 
     msg = (NSQMessage *)s_malloc(sizeof(NSQMessage));
     
@@ -33,7 +32,7 @@ NSQMessage *nsq_decode_message(const char *data, uint32_t data_length)
     memcpy(&msg->id, (unsigned char *)data+12, 37);
     msg->body_length = decodeInt32((unsigned char *)data + 49);
     msg->body = (char *)s_malloc(msg->body_length);
-    memcpy(msg->body, data+53, body_length);
+    memcpy(msg->body, data+53, msg->body_length);
 
     return msg;
 }
