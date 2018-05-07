@@ -4,6 +4,7 @@
 #include "../util/sds.h"
 #include "../util/queue.h"
 #include "../diskqueue/diskqueue.h"
+#include "../util/dict.h"
 
 typedef struct topic {
     sds name;
@@ -11,6 +12,7 @@ typedef struct topic {
     diskqueue *dq;
 
     ngx_queue_t memoryQueue;
+    dict *channelMap;
 
     void *ctx;
 } topic;

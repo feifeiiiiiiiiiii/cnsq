@@ -5,6 +5,7 @@
 #include "../util/queue.h"
 #include "../util/log.h"
 #include "../util/sdsalloc.h"
+#include "../util/tree.h"
 #include "topic.h"
 #include <stdarg.h>
 #include <string.h>
