@@ -10,7 +10,7 @@
 
 #include "utlist.h"
 
-#define E_PENDING_MAX_COUNT 10
+#define E_PENDING_MAX_COUNT 30
 
 typedef enum {NSQ_FRAME_TYPE_RESPONSE, NSQ_FRAME_TYPE_ERROR, NSQ_FRAME_TYPE_MESSAGE, NSQ_FRAME_TYPE_NOREADY} frame_type;
 struct NSQDConnection;

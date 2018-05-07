@@ -28,8 +28,6 @@ static void nsqd_connection_connect_cb(struct BufferedSocket *buffsock, void *ar
 
 static void nsqd_connection_read_size(struct BufferedSocket *buffsock, void *arg)
 {
-        _DEBUG("2. buff = %d\n", BUFFER_HAS_DATA(buffsock->read_buf));
-
     struct NSQDConnection *conn = (struct NSQDConnection *)arg;
     uint32_t *msg_size_be;
 
@@ -41,8 +39,6 @@ static void nsqd_connection_read_size(struct BufferedSocket *buffsock, void *arg
     // convert message length header from big-endian
     conn->current_msg_size = ntohl(*msg_size_be);
 
-    _DEBUG("---- %s: msg_size = %d bytes %p\n", __FUNCTION__, conn->current_msg_size, buffsock->read_buf->data);
-
     buffered_socket_read_bytes(buffsock, conn->current_msg_size, nsqd_connection_read_data, conn);
 }
 
@@ -50,8 +46,6 @@ static void nsqd_connection_read_data(struct BufferedSocket *buffsock, void *arg
 {
     struct NSQDConnection *conn = (struct NSQDConnection *)arg;
     struct NSQMessage *msg;
-
-    _DEBUG("1. buff = %d\n", BUFFER_HAS_DATA(buffsock->read_buf));
 
     conn->current_frame_type = ntohl(*((uint32_t *)buffsock->read_buf->data));
     buffer_drain(buffsock->read_buf, 4);
@@ -71,16 +65,13 @@ static void nsqd_connection_read_data(struct BufferedSocket *buffsock, void *arg
             }
 
             if (strncmp(conn->current_data, "E_PENDING", 9) == 0) {
+                conn->recv_pending_count++;
                 if(conn->recv_pending_count > E_PENDING_MAX_COUNT) {
                     // 设置20s定时器 默认是2s 如果获取到message则清除定时器
                     nsqd_add_pending_timer(E_PENDING_MAX_COUNT, conn, arg);
                 } else {
                     nsqd_add_pending_timer(conn->recv_pending_count, conn, arg);
-                    conn->recv_pending_count++;
                 }
-                //buffer_reset(conn->command_buf);
-                //nsq_nop(conn->command_buf);
-                //buffered_socket_write_buffer(conn->bs, conn->command_buf);
             }
             break;
         case NSQ_FRAME_TYPE_MESSAGE:

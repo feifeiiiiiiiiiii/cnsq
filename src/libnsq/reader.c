@@ -27,14 +27,14 @@ static void pending_callback(EV_P_ ev_timer *w, int revents) {
 }
 
 void nsqd_add_pending_timer(ev_tstamp interval, struct NSQDConnection *conn, void *arg) {
-    _DEBUG("%s: add pending timer, wait = %f s\n", __FUNCTION__, interval);
+    _DEBUG("%s: add pending timer, wait = %.0f s\n", __FUNCTION__, interval * 2);
     if(conn->pendding_timer) {
         ev_timer_stop(conn->loop, conn->pendding_timer);
         free(conn->pendding_timer);
         conn->pendding_timer = NULL;
     }
     conn->pendding_timer = (ev_timer *)malloc(sizeof(ev_timer));
-    ev_timer_init(conn->pendding_timer, pending_callback, interval, 0);
+    ev_timer_init(conn->pendding_timer, pending_callback, interval * 2, 0);
     conn->pendding_timer->data = conn;
     ev_timer_start(conn->loop, conn->pendding_timer);
 }
