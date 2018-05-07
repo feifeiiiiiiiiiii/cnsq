@@ -40,7 +40,7 @@ typedef struct aeApiState {
 } aeApiState;
 
 static int aeApiCreate(aeEventLoop *eventLoop) {
-    aeApiState *state = malloc(sizeof(aeApiState));
+    aeApiState *state = zmalloc(sizeof(aeApiState));
 
     if (!state) return -1;
     FD_ZERO(&state->rfds);
@@ -56,7 +56,7 @@ static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
 }
 
 static void aeApiFree(aeEventLoop *eventLoop) {
-    free(eventLoop->apidata);
+    zfree(eventLoop->apidata);
 }
 
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {

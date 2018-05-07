@@ -1,4 +1,4 @@
-OBJS = anet.o ae.o
+OBJS = anet.o ae.o zmalloc.o
 EXECS = test
 
 all: $(OBJS)
@@ -9,6 +9,9 @@ ae.o: ae.h
 
 anet.o: anet.h
 	gcc -c anet.c
+
+zmalloc.o: zmalloc.h
+	gcc -c zmalloc.c
 
 test: all
 	gcc -o test.out test.c ${OBJS}

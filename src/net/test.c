@@ -4,7 +4,6 @@
 
 static char neterr[ANET_ERR_LEN];
 static aeEventLoop *eventLoop;
-struct timeval tv;
 
 int loop_forver_time_cb(aeEventLoop *eventLoop, void *arg)
 {
@@ -57,7 +56,7 @@ int main()
 	}
 
 	//aeCreateTimeEvent(eventLoop, &tv, loop_forver_time_cb, NULL, 0);
-	aeCreateTimeEvent(eventLoop, &tv, loop_once_time_cb, NULL, 0);
+	//aeCreateTimeEvent(eventLoop, &tv, loop_once_time_cb, NULL, 0);
 	aeMain(eventLoop);
 	return 0;
 }
