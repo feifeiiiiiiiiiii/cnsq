@@ -71,6 +71,13 @@ static void nsqd_connection_read_data(struct BufferedSocket *buffsock, void *arg
             }
 
             if (strncmp(conn->current_data, "E_PENDING", 9) == 0) {
+                if(conn->recv_pending_count > E_PENDING_MAX_COUNT) {
+                    // 设置20s定时器 默认是2s 如果获取到message则清除定时器
+                    nsqd_add_pending_timer(E_PENDING_MAX_COUNT, conn, arg);
+                } else {
+                    nsqd_add_pending_timer(conn->recv_pending_count, conn, arg);
+                    conn->recv_pending_count++;
+                }
                 //buffer_reset(conn->command_buf);
                 //nsq_nop(conn->command_buf);
                 //buffered_socket_write_buffer(conn->bs, conn->command_buf);
@@ -81,6 +88,8 @@ static void nsqd_connection_read_data(struct BufferedSocket *buffsock, void *arg
             if (conn->msg_callback) {
                 conn->msg_callback(conn, msg, conn->arg);
             }
+            conn->recv_pending_count = 0;
+            nsqd_add_pending_timer(0, conn, arg);
             break;
     }
 
@@ -126,6 +135,8 @@ struct NSQDConnection *new_nsqd_connection(struct ev_loop *loop, const char *add
     conn->msg_callback = msg_callback;
     conn->arg = arg;
     conn->loop = loop;
+    conn->recv_pending_count = 0;
+    conn->pendding_timer = NULL;;
     conn->reconnect_timer = NULL;
 
     conn->bs = new_buffered_socket(loop, address, port,

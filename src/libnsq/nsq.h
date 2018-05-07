@@ -10,6 +10,8 @@
 
 #include "utlist.h"
 
+#define E_PENDING_MAX_COUNT 10
+
 typedef enum {NSQ_FRAME_TYPE_RESPONSE, NSQ_FRAME_TYPE_ERROR, NSQ_FRAME_TYPE_MESSAGE, NSQ_FRAME_TYPE_NOREADY} frame_type;
 struct NSQDConnection;
 struct NSQMessage;
@@ -54,6 +56,7 @@ void nsq_reader_set_loop(struct NSQReader *rdr, struct ev_loop *loop);
 void nsq_run(struct ev_loop *loop);
 
 struct NSQDConnection {
+    int recv_pending_count;
     char *address;
     int port;
     struct BufferedSocket *bs;
@@ -63,6 +66,7 @@ struct NSQDConnection {
     char *current_data;
     struct ev_loop *loop;
     ev_timer *reconnect_timer;
+    ev_timer *pendding_timer;
     void (*connect_callback)(struct NSQDConnection *conn, void *arg);
     void (*close_callback)(struct NSQDConnection *conn, void *arg);
     void (*msg_callback)(struct NSQDConnection *conn, struct NSQMessage *msg, void *arg);
@@ -109,5 +113,6 @@ struct NSQLookupdEndpoint {
 
 struct NSQLookupdEndpoint *new_nsqlookupd_endpoint(const char *address, int port);
 void free_nsqlookupd_endpoint(struct NSQLookupdEndpoint *nsqlookupd_endpoint);
+void nsqd_add_pending_timer(ev_tstamp interval, struct NSQDConnection *conn, void *arg);
 
 #endif

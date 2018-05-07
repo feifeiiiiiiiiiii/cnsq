@@ -16,6 +16,29 @@
 #define DEFAULT_WRITE_BUF_LEN        16 * 1024
 #define DEFAULT_WRITE_BUF_CAPACITY   16 * 1024
 
+static void pending_callback(EV_P_ ev_timer *w, int revents) {
+    _DEBUG("pending callback\n");
+    struct NSQDConnection *conn = (struct NSQDConnection *)w->data;
+    struct NSQReader *rdr = (struct NSQReader *)conn->arg;
+
+    buffer_reset(conn->command_buf);
+    nsq_pop(conn->command_buf, rdr->topic, rdr->channel);
+    buffered_socket_write_buffer(conn->bs, conn->command_buf);
+}
+
+void nsqd_add_pending_timer(ev_tstamp interval, struct NSQDConnection *conn, void *arg) {
+    _DEBUG("%s: add pending timer, wait = %f s\n", __FUNCTION__, interval);
+    if(conn->pendding_timer) {
+        ev_timer_stop(conn->loop, conn->pendding_timer);
+        free(conn->pendding_timer);
+        conn->pendding_timer = NULL;
+    }
+    conn->pendding_timer = (ev_timer *)malloc(sizeof(ev_timer));
+    ev_timer_init(conn->pendding_timer, pending_callback, interval, 0);
+    conn->pendding_timer->data = conn;
+    ev_timer_start(conn->loop, conn->pendding_timer);
+}
+
 static void nsq_reader_connect_cb(struct NSQDConnection *conn, void *arg)
 {
     struct NSQReader *rdr = (struct NSQReader *)arg;
@@ -31,10 +54,7 @@ static void nsq_reader_connect_cb(struct NSQDConnection *conn, void *arg)
     nsq_subscribe(conn->command_buf, rdr->topic, rdr->channel);
     buffered_socket_write_buffer(conn->bs, conn->command_buf);
 
-    // send POP
-    buffer_reset(conn->command_buf);
-    nsq_pop(conn->command_buf, rdr->topic, rdr->channel);
-    buffered_socket_write_buffer(conn->bs, conn->command_buf);
+    nsqd_add_pending_timer(0, conn, rdr);
 }
 
 static void nsq_reader_msg_cb(struct NSQDConnection *conn, struct NSQMessage *msg, void *arg)
@@ -60,6 +80,13 @@ static void nsq_reader_close_cb(struct NSQDConnection *conn, void *arg)
     }
 
     LL_DELETE(rdr->conns, conn);
+
+    if(conn->pendding_timer) {
+        _DEBUG("%s: stop pending timer\n", __FUNCTION__);
+        ev_timer_stop(conn->loop, conn->pendding_timer);
+        free(conn->pendding_timer);
+        conn->pendding_timer = NULL;
+    }
 
     // There is no lookupd, try to reconnect to nsqd directly
     if (rdr->lookupd == NULL) {

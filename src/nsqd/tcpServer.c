@@ -422,8 +422,12 @@ int pop(client *c, sds *tokens, int count) {
 		addReplyString(c, "E_PENDING", 9, FrameTypeResponse);
 		goto failed;
 	}
+	uint32_t len = MSG_HEADER_LEN + msg->body_length;
+    char *buf = malloc(len + 1);
+    nsq_encode_message(msg, buf);
+
 	log_debug("pop message = msgId = %s", msg->id);
-	addReplyString(c, msg->body, msg->body_length, FrameTypeMessage);
+	addReplyString(c, buf, len, FrameTypeMessage);
 
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
