@@ -30,6 +30,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 		nwritten = write(fd,c->buf,sdslen(c->buf));
 		if (nwritten <= 0) break;
 
+		log_debug("%d %d", nwritten, sdslen(c->buf));
 		c->total_sent_bytes += nwritten;
 		sdsrange(c->buf, nwritten, -1);
 	}
@@ -63,7 +64,7 @@ static int prepareClientToWrite(client *c) {
 static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t frameType) {
 	c->buf = sdsMakeRoomFor(c->buf, len+4+4);
 	char buf[4];
-	conv2BE(htonl(len), buf);
+	conv2BE(htonl(len+4), buf);
 	sdscatlen(c->buf, buf, 4);
 	
 	conv2BE(htonl(frameType), buf);
@@ -75,6 +76,7 @@ static int _addReplyToBuffer(client *c, const char *s, size_t len, uint32_t fram
 
 void addReplyString(client *c, const char *s, size_t len, uint32_t frameType) {
 	if (prepareClientToWrite(c) != C_OK) return;
+	log_debug("addReplyString %d", len);
     _addReplyToBuffer(c,s,len, frameType);
 }
 
@@ -417,7 +419,7 @@ int pop(client *c, sds *tokens, int count) {
 
 	NSQMessage *msg = getMessage(t);
 	if(msg == NULL) {
-		addReplyString(c, "E_PENDING", 10, FrameTypeResponse);
+		addReplyString(c, "E_PENDING", 9, FrameTypeResponse);
 		goto failed;
 	}
 	log_debug("pop message = msgId = %s", msg->id);
