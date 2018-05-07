@@ -1,4 +1,7 @@
 #include "nsqd.h"
+#include <signal.h>
+
+NSQD *n;
 
 static uint64_t dictSdsHash(const void *key) {
     return dictGenHashFunction((unsigned char*)key, sdslen((char*)key));
@@ -25,7 +28,7 @@ dictType keyptrDictType = {
 };
 
 NSQD *build() {
-    NSQD *n = s_malloc(sizeof(NSQD));
+    n = s_malloc(sizeof(NSQD));
     if(n == NULL) return NULL;
 
     n->topicMap = dictCreate(&keyptrDictType, NULL);
@@ -53,13 +56,40 @@ topic *getTopic(NSQD *n, sds topicName) {
     return t;
 }
 
+static void sigShutdownHandler(int sig) {
+    char *msg;
+
+    switch (sig) {
+    case SIGINT:
+        msg = "Received SIGINT scheduling shutdown...";
+        break;
+    case SIGTERM:
+        msg = "Received SIGTERM scheduling shutdown...";
+        break;
+    default:
+        msg = "Received shutdown signal, scheduling shutdown...";
+    };
+    log_debug("sig shut down %s", msg);
+    // handler NSQD instance
+    exit(0);
+}
+
 int main(int argc, char **argv) {
-    NSQD *n = build();
+    build();
     if(n == NULL) {
         log_trace("build nsqd server failed");
         return 0;
     }
     
+    struct sigaction act;
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    act.sa_handler = sigShutdownHandler;
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGINT, &act, NULL);
+
     nsqdMain(n);
 
 
