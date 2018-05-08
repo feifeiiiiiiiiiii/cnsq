@@ -1,6 +1,8 @@
 #include "nsqd.h"
 #include <signal.h>
 
+//valgrind -v --log-file=valgrind.log --tool=memcheck --leak-check=full ./nsqd.out
+
 NSQD *n;
 
 static uint64_t dictSdsHash(const void *key) {
@@ -71,6 +73,19 @@ static void sigShutdownHandler(int sig) {
     };
     log_debug("sig shut down %s", msg);
     // handler NSQD instance
+    closeTcpServer(n->tcpListener);
+    
+    // 
+    dictIterator *di;
+    dictEntry *de;
+    di = dictGetSafeIterator(n->topicMap);
+
+    while((de = dictNext(di)) != NULL) {
+        topic *t = dictGetVal(de);
+        closeTopic(t);
+    }
+     dictReleaseIterator(di);
+    s_free(n);
     exit(0);
 }
 

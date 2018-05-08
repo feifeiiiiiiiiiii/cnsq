@@ -115,6 +115,7 @@ static void processInputBuffer(client *c) {
 	sds *tokens;
 	int count;
 	int rangeLen = 0;
+	char protoMagic[5];
 	
 	while(sdslen(c->querybuf)) {
 		if(!c->proto_type) {
@@ -122,7 +123,6 @@ static void processInputBuffer(client *c) {
 				break;
 			}
 			/* magic str [space][space][V][2] */
-			char protoMagic[5];
 			memcpy(protoMagic, c->querybuf, 4);
 			protoMagic[4] = '\0';
 
@@ -177,6 +177,9 @@ static void processInputBuffer(client *c) {
 		} else {
 			break;
 		}
+		if(tokens) {
+			s_free(tokens);
+		}
 	}
 }
 
@@ -223,6 +226,9 @@ static client *createClient(aeEventLoop *el, int fd) {
             s_free(c);
             return NULL;
         }
+	} else {
+		s_free(c);
+		return NULL;
 	}
 	c->fd = fd;
 	c->total_sent_bytes = 0;
@@ -295,6 +301,9 @@ tcpServer *buildTcpServer(char *ipaddr, int port, int backlog, void *context) {
 	}
     return tcpListener;   
 failed:
+	if(tcpListener->el) {
+		s_free(tcpListener->el);
+	}
     s_free(tcpListener);
     return NULL;
 }
@@ -429,6 +438,9 @@ int pop(client *c, sds *tokens, int count) {
 	log_debug("pop message = msgId = %s", msg->id);
 	addReplyString(c, buf, len, FrameTypeMessage);
 
+	s_free(buf);
+	s_free(msg);
+
 	c->execProc = NULL;
 	c->proto_type = PROTO_INIT;
 	return C_OK;
@@ -441,4 +453,9 @@ failed:
 int ping(client *c, sds *tokens, int count) {
 	addReplyString(c, "PONG", 4, FrameTypeResponse);
 	return C_OK;
+}
+
+void closeTcpServer(tcpServer *tcpLister) {
+	aeDeleteEventLoop(tcpLister->el);
+	s_free(tcpLister);
 }

@@ -18,5 +18,6 @@ typedef struct topic {
 } topic;
 
 topic *newTopic(sds name);
+void closeTopic(topic *t);
 
 #endif // TOPIC_H

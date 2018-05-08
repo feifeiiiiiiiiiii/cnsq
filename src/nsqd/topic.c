@@ -70,3 +70,9 @@ NSQMessage *getMessage(topic *t) {
 
     return msg;
 }
+
+void closeTopic(topic *t) {
+    s_free(t->dq);
+    dictRelease(t->channelMap);
+    s_free(t);
+}

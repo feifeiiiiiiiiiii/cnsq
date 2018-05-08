@@ -67,6 +67,7 @@ typedef struct tcpServer {
 
 tcpServer *buildTcpServer(char *ipaddr, int port, int tcp_backlog, void *context);
 void tcpServerRun(tcpServer *tcpLister);
+void closeTcpServer(tcpServer *tcpLister);
 
 void addReplyString(client *c, const char *s, size_t len, uint32_t frameType);
 void addReplyErrorLength(client *c, const char *s, size_t len, uint32_t frameType);
