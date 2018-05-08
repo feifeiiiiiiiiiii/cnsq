@@ -83,8 +83,11 @@ static void sigShutdownHandler(int sig) {
     while((de = dictNext(di)) != NULL) {
         topic *t = dictGetVal(de);
         closeTopic(t);
+        s_free(de);
     }
-     dictReleaseIterator(di);
+    dictReleaseIterator(di);
+
+    s_free(n->topicMap);
     s_free(n);
     exit(0);
 }

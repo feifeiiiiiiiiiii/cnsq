@@ -113,7 +113,7 @@ static void freeClient(client *c) {
 static void processInputBuffer(client *c) {
 	char *newline = NULL;
 	sds *tokens;
-	int count;
+	int count = 0;
 	int rangeLen = 0;
 	char protoMagic[5];
 	
@@ -146,39 +146,39 @@ static void processInputBuffer(client *c) {
 			}
 			rangeLen = (newline - c->querybuf);
 			tokens = sdssplitlen(c->querybuf, rangeLen, " ", 1, &count);
-			if(sdscmp(tokens[0], sdsnew("SUB")) == 0) {
+			
+			if(strcmp(tokens[0], "SUB") == 0) {
 				c->proto_type = PROTO_SUB;
 				c->execProc = sub;
-			} else if(sdscmp(tokens[0], sdsnew("PUB")) == 0) {
+			} else if(strcmp(tokens[0], "PUB") == 0) {
 				c->proto_type = PROTO_PUB;
 				c->execProc = pub;
-			} else if(sdscmp(tokens[0], sdsnew("FIN")) == 0) {
+			} else if(strcmp(tokens[0], "FIN") == 0) {
 				c->proto_type = PROTO_FIN;
 				c->execProc = fin;
-			} else if(sdscmp(tokens[0], sdsnew("POP")) == 0) {
+			} else if(strcmp(tokens[0], "POP") == 0) {
 				c->proto_type = PROTO_POP;
 				c->execProc = pop;
-			} else if(sdscmp(tokens[0], sdsnew("PING")) == 0) {
+			} else if(strcmp(tokens[0], "PING") == 0) {
 				c->proto_type = PROTO_PING;
 				c->execProc = ping;
 			} else {
-				addReplyError(c, "bad command", FrameTypeError);
-				log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
-				freeClient(c);
-				break;
 			}
 		}
 		if(c->execProc) {
 			if(c->execProc(c, tokens, count) == C_OK) {
+				sdsfreesplitres(tokens, count);
 				sdsrange(c->querybuf, rangeLen+1, -1);
 			} else {
+				sdsfreesplitres(tokens, count);
 				break;
 			}
 		} else {
+			addReplyError(c, "bad command", FrameTypeError);
+			log_error("client(%d) bad command '%s'", c->fd, tokens[0]);
+			sdsfreesplitres(tokens, count);
+			freeClient(c);
 			break;
-		}
-		if(tokens) {
-			s_free(tokens);
 		}
 	}
 }

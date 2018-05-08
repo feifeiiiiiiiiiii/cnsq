@@ -418,3 +418,16 @@ void handleReadError(diskqueue *d)
     free(badFn);
     free(badRenameFn);
 }
+
+void closeDq(diskqueue *d) {
+    if(d->name) free(d->name);
+    if(d->dataPath) free(d->dataPath);
+    if(d->writeBuf) free(d->writeBuf);
+    if(d->readFile) {
+        fclose(d->readFile);
+    }
+    if(d->writeFile) {
+        fclose(d->writeFile);
+    }
+    free(d);
+}

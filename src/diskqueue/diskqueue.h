@@ -51,5 +51,6 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
 void *readOne(diskqueue *d, u32 *dataLen);
 void *readData(diskqueue *d, u32 *dataLen);
 int putData(diskqueue *d, char *msg, const u32 dataLen);
+void closeDq(diskqueue *d);
 
 #endif // DISKQUEUE_H_

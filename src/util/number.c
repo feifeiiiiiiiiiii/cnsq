@@ -1,6 +1,6 @@
 #include "number.h"
 
-int encodeInt32(u_int32_t value, unsigned char *enc) {
+int encodeInt32(uint32_t value, unsigned char *enc) {
     enc[0] = value&0xFF;
     enc[1] = (value>>8)&0xFF;
     enc[2] = (value>>16)&0xFF;
@@ -13,7 +13,8 @@ uint32_t decodeInt32(unsigned char *enc) {
 }
 
 void encodeInt64(int64_t value, unsigned char *enc) {
-    for(int i = 0; i < 8; i++) enc[i] = value >> (8-1-i)*8;
+    int i = 0;
+    for(i = 0; i < 8; i++) enc[i] = value >> (8-1-i)*8;
     return;
 }
 
