@@ -35,7 +35,7 @@ NSQD *build() {
 
     n->topicMap = dictCreate(&keyptrDictType, NULL);
     
-    n->tcpListener = buildTcpServer("127.0.0.1", 6379, 128, n); 
+    n->tcpListener = buildTcpServer("0.0.0.0", 6379, 128, n); 
     if(n->tcpListener == NULL) {
         s_free(n);
         return NULL;
@@ -83,11 +83,9 @@ static void sigShutdownHandler(int sig) {
     while((de = dictNext(di)) != NULL) {
         topic *t = dictGetVal(de);
         closeTopic(t);
-        s_free(de);
     }
     dictReleaseIterator(di);
-
-    s_free(n->topicMap);
+    dictRelease(n->topicMap);
     s_free(n);
     exit(0);
 }

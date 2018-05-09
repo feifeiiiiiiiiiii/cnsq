@@ -34,8 +34,6 @@ static dictType keyptrDictType = {
 topic *newTopic(sds name) {
     topic *t = s_malloc(sizeof(topic));
     t->name = sdsempty();
-    sdscatsds(t->name, name);
-    t->channelMap = dictCreate(&keyptrDictType, NULL);
     t->memDepth = 0;
     t->dq = New(name, "/tmp", 1024 * 1024, 28, 1024, 10);
     ngx_queue_init(&t->memoryQueue);
@@ -72,7 +70,7 @@ NSQMessage *getMessage(topic *t) {
 }
 
 void closeTopic(topic *t) {
-    s_free(t->dq);
-    dictRelease(t->channelMap);
+    if(t->name != NULL) sdsfree(t->name);
+    if(t->dq != NULL) s_free(t->dq);
     s_free(t);
 }
