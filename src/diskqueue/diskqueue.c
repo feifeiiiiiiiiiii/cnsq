@@ -52,6 +52,8 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     d->nextReadFileNum = 0;
     d->readFileNum = 0;
 
+    d->metaName = metaDataFileName(d);
+
     res = retrieveMetaData(d);
 
     return d;
@@ -72,7 +74,7 @@ int retrieveMetaData(diskqueue *d)
     int err;
     const char *fileName = NULL;
 
-    fileName = metaDataFileName(d);
+    fileName = d->metaName;
 
     f = fopen(fileName, "r");
     if(f == NULL) {
@@ -91,26 +93,24 @@ int retrieveMetaData(diskqueue *d)
     fclose(f);
     return 1;
 failed:
-    if(fileName != NULL)
-        free((void *)fileName);
     return 0;
 }
 
 static
 char *metaDataFileName(diskqueue *d)
 {
-    u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 2;
-    char *fileName = malloc(len+1);
+    u32 len = strlen(d->dataPath) + strlen(d->name) + 20;
+    log_debug("%d %d %d", strlen(d->dataPath), strlen(d->name), len);
+    char *fileName = calloc(1, len+1);
     sprintf(fileName, META_FMT_STR, d->dataPath, d->name);
     return fileName;
 }
 
 static
 char *fileName(diskqueue *d, u32 filenum) {
-    u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 7;
-    char *fileName = malloc(len+1);
+    u32 len = strlen(d->dataPath) + strlen(d->name) + 16 + 6;
+    char *fileName = calloc(1, len+1);
     sprintf(fileName, DATA_FMT_STR, d->dataPath, d->name, filenum);
-    fileName[len+1] = '\0';
     return fileName;
 }
 
@@ -154,7 +154,8 @@ void *readOne(diskqueue *d, u32 *dataLen) {
         return NULL;
     }
 
-    char *data = (char *)malloc(msgSize+1);
+    char *data = (char *)calloc(1, msgSize+1);
+
     *dataLen = msgSize;
 
     rc = fread(data, 1, msgSize, d->readFile);
@@ -162,7 +163,7 @@ void *readOne(diskqueue *d, u32 *dataLen) {
         fclose(d->readFile);
         d->readFile = NULL;
         free(data);
-        return 0;
+        return NULL;
     }
 
     u64 totalBytes = (4 + msgSize);
@@ -289,15 +290,16 @@ int persistMetaData(diskqueue *d)
     int err;
     srand((unsigned)time(NULL));
 
-    const char *fileName = metaDataFileName(d);
+    const char *fileName = d->metaName;
     int tmpLen = strlen(fileName) + 4 + 2 + 3;
-    char tmpFileName[tmpLen+1];
+    char tmpFileName[tmpLen];
+    memset(tmpFileName, 0, sizeof(tmpFileName));
+
     sprintf(tmpFileName, TEMP_FMT_STR, fileName, (int)random()%6379);
 
     log_debug("%s", tmpFileName);
     f = fopen(tmpFileName, "w");
     if(f == NULL) {
-        free((char *)fileName);
         log_debug("%s, %s\n", tmpFileName, strerror(errno));
         return 0;
     }
@@ -309,7 +311,6 @@ int persistMetaData(diskqueue *d)
     fflush(f);
     fclose(f);
     rename(tmpFileName, fileName);
-    free((char *)fileName);
     return 1;
 }
 
@@ -390,6 +391,7 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
 static
 void handleReadError(diskqueue *d)
 {
+    return NULL;
     if(d->readFileNum == d->writeFileNum) {
         if(d->writeFile != NULL) {
             fclose(d->writeFile);
@@ -400,7 +402,7 @@ void handleReadError(diskqueue *d)
     }
 
     char *badFn = fileName(d, d->readFileNum);
-    char *badRenameFn = malloc(sizeof(strlen(badFn)) + 5);
+    char *badRenameFn = calloc(1, sizeof(strlen(badFn)) + 5);
     sprintf(badRenameFn, "%s.bad", badFn);
 
     int ret = rename(badFn, badRenameFn);
@@ -422,7 +424,7 @@ void handleReadError(diskqueue *d)
 void closeDq(diskqueue *d) {
     if(d->name) free(d->name);
     if(d->dataPath) free(d->dataPath);
-    if(d->writeBuf) free(d->writeBuf);
+    if(d->metaName) free(d->metaName);
     if(d->readFile) {
         fclose(d->readFile);
     }

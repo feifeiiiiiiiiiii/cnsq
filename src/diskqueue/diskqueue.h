@@ -39,12 +39,13 @@ typedef struct {
     File    *writeFile;
 
     char    *reader;
-    char    *writeBuf;
 
 
     // metadata
     char    *name;
     char    *dataPath;
+
+    char    *metaName;
 } diskqueue;
 
 void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMsgSize, u32 maxMsgSize, u64 syncEvery);
