@@ -364,10 +364,11 @@ int pub(client *c, sds *tokens, int count) {
 	}
 	
 	sds topicName = tokens[1];
+	int i;
 
 	// read byte
 	size_t hasread = 0;
-	for(int i = 0; i < count; i++) {
+	for(i = 0; i < count; i++) {
 		hasread += sdslen(tokens[i]);
 	}
 	hasread += 2; // "\n"

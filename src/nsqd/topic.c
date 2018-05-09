@@ -71,6 +71,6 @@ NSQMessage *getMessage(topic *t) {
 
 void closeTopic(topic *t) {
     if(t->name != NULL) sdsfree(t->name);
-    if(t->dq != NULL) s_free(t->dq);
+    if(t->dq != NULL) closeDq(t->dq);
     s_free(t);
 }

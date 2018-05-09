@@ -27,12 +27,12 @@ void *New(const char *name, const char *dataPath, u64 maxBytesPerFile, u32 minMs
     if(d == NULL)
         return NULL;
 
-    d->name = (char *)malloc((nameLen));
+    d->name = (char *)calloc(1, nameLen);
     if(d->name == NULL)
         goto failed;
     memcpy(d->name, name, nameLen);
 
-    d->dataPath = (char *)malloc((pathLen));
+    d->dataPath = (char *)calloc(1, pathLen);
     if(d->dataPath == NULL)
         goto failed;
     memcpy(d->dataPath, dataPath, pathLen);
@@ -100,7 +100,7 @@ static
 char *metaDataFileName(diskqueue *d)
 {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 2;
-    char *fileName = malloc(len+1);
+    char *fileName = calloc(1, len+1);
     sprintf(fileName, META_FMT_STR, d->dataPath, d->name);
     return fileName;
 }
@@ -108,7 +108,7 @@ char *metaDataFileName(diskqueue *d)
 static
 char *fileName(diskqueue *d, u32 filenum) {
     u32 len = strlen(d->dataPath) + strlen(d->name) + 19 + 7;
-    char *fileName = malloc(len+1);
+    char *fileName = calloc(1, len+1);
     sprintf(fileName, DATA_FMT_STR, d->dataPath, d->name, filenum);
     fileName[len+1] = '\0';
     return fileName;
@@ -154,7 +154,7 @@ void *readOne(diskqueue *d, u32 *dataLen) {
         return NULL;
     }
 
-    char *data = (char *)malloc(msgSize+1);
+    char *data = (char *)calloc(1, msgSize+1);
     *dataLen = msgSize;
 
     rc = fread(data, 1, msgSize, d->readFile);
@@ -245,6 +245,7 @@ static
 void skipToNextRWFile(diskqueue *d)
 {
     int err;
+    u64 i;
 
     if(d->readFile != NULL) {
         fclose(d->readFile);
@@ -256,7 +257,7 @@ void skipToNextRWFile(diskqueue *d)
         d->writeFile = NULL;
     }
 
-    for(u64 i = d->readFileNum; i <= d->writeFileNum; i++) {
+    for(i = d->readFileNum; i <= d->writeFileNum; i++) {
         const char *fn = fileName(d, i);
         remove(fn);
         free((void *)fn);
@@ -422,7 +423,6 @@ void handleReadError(diskqueue *d)
 void closeDq(diskqueue *d) {
     if(d->name) free(d->name);
     if(d->dataPath) free(d->dataPath);
-    if(d->writeBuf) free(d->writeBuf);
     if(d->readFile) {
         fclose(d->readFile);
     }
