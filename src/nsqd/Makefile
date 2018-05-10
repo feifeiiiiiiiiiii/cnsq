@@ -6,19 +6,19 @@ all: ${OBJS} ${NET_OBJS}
 	gcc -o nsqd.out ${OBJS} ${LIBS} -g3
 
 tcpServer.o: tcpServer.h
-	gcc -c tcpServer.c -std=gnu99
+	gcc -c tcpServer.c
 
 nsqd.o: nsqd.h
-	gcc -c nsqd.c -std=gnu99
+	gcc -c nsqd.c
 
 topic.o: topic.h  common.h
-	gcc -c topic.c -std=gnu99
+	gcc -c topic.c
 
 message.o: common.h
-	gcc -c message.c -std=gnu99
+	gcc -c message.c
 
 channel.o: channel.h
-	gcc -c channel.c -std=gnu99
+	gcc -c channel.c
 
 clean:
 	rm -f ${EXECS} *.a *.o *.exe
