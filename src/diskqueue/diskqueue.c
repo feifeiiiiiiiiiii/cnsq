@@ -423,6 +423,7 @@ void handleReadError(diskqueue *d)
 void closeDq(diskqueue *d) {
     if(d->name) free(d->name);
     if(d->dataPath) free(d->dataPath);
+    if(d->metaName) free(d->metaName);
     if(d->readFile) {
         fclose(d->readFile);
     }

@@ -52,9 +52,10 @@ topic *getTopic(NSQD *n, sds topicName) {
     if(entry != NULL) {
         return dictGetVal(entry);
     }
-    topic *t = newTopic(topicName);
-    dictAdd(n->topicMap, topicName, t);
-    log_debug("Topic(%s): created", topicName);
+    sds cpy = sdsdup(topicName);
+    topic *t = newTopic(cpy);
+    dictAdd(n->topicMap, cpy, t);
+    log_debug("Topic(%s): created", cpy);
     return t;
 }
 
@@ -82,6 +83,8 @@ static void sigShutdownHandler(int sig) {
 
     while((de = dictNext(di)) != NULL) {
         topic *t = dictGetVal(de);
+        sds key = dictGetKey(de);
+        sdsfree(key);
         closeTopic(t);
     }
     dictReleaseIterator(di);
