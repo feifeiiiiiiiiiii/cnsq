@@ -205,7 +205,7 @@ void moveForward(diskqueue *d) {
 	d->readPos = d->nextReadPos;
     d->depth -= 1;
 
-    // 
+    //
     dqsync(d);
     if(oldReadFileNum != d->nextReadFileNum) {
 
@@ -390,7 +390,6 @@ int writeOne(diskqueue *d, char *data, u32 dataLen)
 static
 void handleReadError(diskqueue *d)
 {
-    return NULL;
     if(d->readFileNum == d->writeFileNum) {
         if(d->writeFile != NULL) {
             fclose(d->writeFile);
