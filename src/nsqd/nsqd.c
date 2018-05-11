@@ -30,12 +30,15 @@ static dictType keyptrDictType = {
 };
 
 NSQD *build() {
+    Option *opt = buildOpt();
+    
     n = s_malloc(sizeof(NSQD));
     if(n == NULL) return NULL;
-
+    
+    n->ctx = opt;
     n->topicMap = dictCreate(&keyptrDictType, NULL);
     
-    n->tcpListener = buildTcpServer("0.0.0.0", 6379, 128, n); 
+    n->tcpListener = buildTcpServer(opt->tcpAddress, opt->listenPort, opt->backlog, n); 
     if(n->tcpListener == NULL) {
         s_free(n);
         return NULL;
@@ -53,7 +56,7 @@ topic *getTopic(NSQD *n, sds topicName) {
         return dictGetVal(entry);
     }
     sds cpy = sdsdup(topicName);
-    topic *t = newTopic(cpy);
+    topic *t = newTopic(cpy, n->ctx);
     dictAdd(n->topicMap, cpy, t);
     log_debug("Topic(%s): created", cpy);
     return t;
@@ -89,6 +92,7 @@ static void sigShutdownHandler(int sig) {
     }
     dictReleaseIterator(di);
     dictRelease(n->topicMap);
+    freeOpt(n->ctx);
     s_free(n);
     exit(0);
 }

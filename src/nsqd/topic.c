@@ -31,11 +31,13 @@ static dictType keyptrDictType = {
     NULL                        /* val destructor */
 };
 
-topic *newTopic(sds name) {
+topic *newTopic(sds name, void *ctx) {
+    Option *opt = (Option *)ctx;
     topic *t = s_malloc(sizeof(topic));
-    t->name = sdsempty();
+    t->name = sdsdup(name);
     t->memDepth = 0;
-    t->dq = New(name, "/tmp", 1024 * 1024, 28, 1024, 10);
+    t->dq = New(name, opt->dataPath, opt->maxBytesPerFile, opt->minMsgSize, opt->maxMsgSize, opt->syncEvery);
+    t->memDepth = opt->memQueueSize;
     ngx_queue_init(&t->memoryQueue);
     return t;
 }

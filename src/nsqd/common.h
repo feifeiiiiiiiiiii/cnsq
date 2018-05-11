@@ -6,6 +6,7 @@
 #include "../util/log.h"
 #include "../util/sdsalloc.h"
 #include "../util/tree.h"
+#include "options.h"
 #include "topic.h"
 #include <stdarg.h>
 #include <string.h>
@@ -16,7 +17,8 @@
 
 typedef struct NSQD {
     void *tcpListener;
-    dict *topicMap;    
+    dict *topicMap; 
+    void *ctx;   
 } NSQD;
 
 typedef struct NSQMessage {

@@ -1,4 +1,4 @@
-OBJS = tcpServer.o nsqd.o topic.o message.o channel.o
+OBJS = tcpServer.o nsqd.o topic.o message.o channel.o options.o
 LIBS = ../net/libnet.a ../util/libutil.a ../diskqueue/libdiskqueue.a
 EXECS = nsqd.out
 
@@ -19,6 +19,9 @@ message.o: common.h
 
 channel.o: channel.h
 	gcc -c channel.c
+
+options.o: options.h
+	gcc -c options.c
 
 clean:
 	rm -f ${EXECS} *.a *.o *.exe

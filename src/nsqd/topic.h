@@ -17,7 +17,7 @@ typedef struct topic {
     void *ctx;
 } topic;
 
-topic *newTopic(sds name);
+topic *newTopic(sds name, void *ctx);
 void closeTopic(topic *t);
 
 #endif // TOPIC_H
