@@ -400,7 +400,7 @@ void handleReadError(diskqueue *d)
     }
 
     char *badFn = fileName(d, d->readFileNum);
-    char *badRenameFn = calloc(1, sizeof(strlen(badFn)) + 5);
+    char *badRenameFn = calloc(1, strlen(badFn) + 5);
     sprintf(badRenameFn, "%s.bad", badFn);
 
     int ret = rename(badFn, badRenameFn);
