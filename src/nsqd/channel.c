@@ -26,8 +26,8 @@ static dictType keyptrDictType = {
     NULL                        /* val destructor */
 };
 
-channel *newChannel(sds topicName, sds channelName, void *ctx) {
-    Option *opt = (Option *)ctx;
+channel *newChannel(sds topicName, sds channelName, void *cf, void *ctx) {
+    Option *opt = (Option *)cf;
     channel *ch = s_malloc(sizeof(channel));
     if(ch == NULL) return NULL;
 
@@ -35,8 +35,20 @@ channel *newChannel(sds topicName, sds channelName, void *ctx) {
     ch->topicName = sdsdup(topicName);
     ch->inFlightMessages = dictCreate(&keyptrDictType, NULL);
     ch->backendQueue = New(channelName, opt->dataPath, opt->maxBytesPerFile, opt->minMsgSize, opt->maxMsgSize, opt->syncEvery);
+    ch->memDepth = opt->memQueueSize;
+    ch->ctx = ctx;
     ngx_queue_init(&ch->memoryQueue);
     return NULL;
+}
+
+void putToChanMessage(channel *ch, NSQMessage *msg) {
+    log_debug("putMessage to channel msgId = %s", msg->id);
+    
+    uint32_t len = MSG_HEADER_LEN + msg->body_length;
+    char *buf = malloc(len + 1);
+    nsq_encode_message(msg, buf);
+
+    putData(ch->backendQueue, buf, len);
 }
 
 void closeChannel(channel *ch) {
