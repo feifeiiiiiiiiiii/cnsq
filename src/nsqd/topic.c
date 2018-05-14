@@ -38,6 +38,8 @@ topic *newTopic(sds name, void *ctx) {
     t->memDepth = 0;
     t->dq = New(name, opt->dataPath, opt->maxBytesPerFile, opt->minMsgSize, opt->maxMsgSize, opt->syncEvery);
     t->memDepth = opt->memQueueSize;
+    t->channelMap = dictCreate(&keyptrDictType, NULL);
+    t->ctx = ctx;
     ngx_queue_init(&t->memoryQueue);
     return t;
 }
@@ -75,4 +77,16 @@ void closeTopic(topic *t) {
     if(t->name != NULL) sdsfree(t->name);
     if(t->dq != NULL) closeDq(t->dq);
     s_free(t);
+}
+
+void *getChannel(topic *t, sds channelName) {
+    dictEntry *entry = dictFind(t->channelMap, channelName);
+    if(entry != NULL) {
+        return dictGetVal(entry);
+    }
+    sds cpy = sdsdup(channelName);
+    channel *ch = newChannel(t->name, channelName, t->ctx, NULL);
+    dictAdd(t->channelMap, cpy, t);
+    log_debug("Channel(%s): created", cpy);
+    return ch;
 }

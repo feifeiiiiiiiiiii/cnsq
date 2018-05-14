@@ -19,5 +19,6 @@ typedef struct topic {
 
 topic *newTopic(sds name, void *ctx);
 void closeTopic(topic *t);
+void *getChannel(topic *t, sds channelName);
 
 #endif // TOPIC_H

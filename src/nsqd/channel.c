@@ -30,7 +30,6 @@ channel *newChannel(sds topicName, sds channelName, void *cf, void *ctx) {
     Option *opt = (Option *)cf;
     channel *ch = s_malloc(sizeof(channel));
     if(ch == NULL) return NULL;
-
     ch->name = sdsdup(channelName);
     ch->topicName = sdsdup(topicName);
     ch->inFlightMessages = dictCreate(&keyptrDictType, NULL);

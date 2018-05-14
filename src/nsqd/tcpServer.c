@@ -337,7 +337,8 @@ int sub(client *c, sds *tokens, int count) {
 	tcpServer *serv = (tcpServer *)c->ctx;
 	NSQD *nsqd = (NSQD *)serv->ctx;
 	
-	getTopic(nsqd, tokens[1]);
+	topic *t = getTopic(nsqd, tokens[1]);
+	c->ch = getChannel(t, tokens[2]);
 
 	c->state = STATE_SUBSCRIBED;
 	c->execProc = NULL;

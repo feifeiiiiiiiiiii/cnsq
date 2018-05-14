@@ -8,6 +8,7 @@
 #include "../net/anet.h"
 #include "../util/sds.h"
 #include "../util/log.h"
+#include "channel.h"
 #include <string.h>
 
 #define PROTO_INIT 1
@@ -45,6 +46,7 @@ typedef struct client {
     int state;
     sds querybuf;
     protoProc *execProc;
+    channel *ch;
     void *ctx;
 
     int total_sent_bytes;  
